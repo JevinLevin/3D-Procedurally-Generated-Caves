@@ -1,17 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using EditorAttributes;
-using Unity.AI.Navigation;
-using Unity.VisualScripting;
-using UnityEditor;
 using UnityEngine;
-using UnityEngine.Tilemaps;
-using UnityEngine.Events;
-using UnityEngine.Serialization;
 using Random = UnityEngine.Random;
-using Tween = PrimeTween.Tween;
 
 public class CaveGenerator : MonoBehaviour
 {
@@ -32,13 +23,16 @@ public class CaveGenerator : MonoBehaviour
     public static int xLengthHalf;
     public static int yLengthHalf;
 
-    private List<WalkerObject> walkers;
+    private List<Walker> walkers;
     private int tileCount;
     private List<Room> allRooms;
     
-    private List<GameObject> floor;
+    [SerializeField] [HideInInspector] private List<GameObject> floor = new();
     
-    
+    /// <summary>
+    /// Initialises the grid used for generation
+    /// </summary>
+    /// <param name="grid">Holds cave data</param>
     private void InitGrid(Cell[,] grid)
     {
         // Set seed
@@ -49,12 +43,8 @@ public class CaveGenerator : MonoBehaviour
         
         // Set blank tiles
         for (int i = 0; i < grid.GetLength(0); i++)
-        {
             for (int j = 0; j < grid.GetLength(1); j++)
-            {
                 grid[i, j] = new Cell(i,j);
-            }   
-        }
         
         xLength = levelGrid.GetLength(0);
         yLength = levelGrid.GetLength(1);
@@ -65,8 +55,11 @@ public class CaveGenerator : MonoBehaviour
     }
     
 
+    /// <summary>
+    /// Completes the full process of generating the cave
+    /// </summary>
     [Button]
-    public void FullGenerate()
+    private void FullGenerate()
     {
         
         // Clear anything left over
@@ -75,28 +68,28 @@ public class CaveGenerator : MonoBehaviour
         // Initialise Room
         InitGrid(levelGrid);
         
-        Vector3Int origin = new Vector3Int(xLengthHalf, yLengthHalf, 0);
         // Generate initial shape
         WalkerStart();
         AddCellularAutomaton(settings.cAIterations);
-        // Repeat process twice to ensure no inaccessible walls are created when polishing
-        CreateRooms();
-        PolishRoom();
-        CreateRooms();
-        PolishRoom();
         
-        if(allRooms.Count > 1)
-            Debug.LogError("AHHHHHHHHHHHHHHHHHHH");
+        // Repeat process twice to ensure no inaccessible walls are created when polishing
+        // Testing found this combination produced the best results
+        CreateRooms();
+        PolishRoom();
+        CreateRooms();
+        PolishRoom();
         
         // Spawn environment tiles
         GenerateEnvironment();
         
-        // Set tiles into the tilemap
+        // Instantiate all gameobjects
         SetTiles();
     }
     
-    // Clear tilemaps and all game objects
-    public void ClearRoom()
+    /// <summary>
+    /// Remove all game objects from the room
+    /// </summary>
+    private void ClearRoom()
     {
         tileCount = 0;
         foreach (GameObject floorTile in floor)
@@ -109,42 +102,36 @@ public class CaveGenerator : MonoBehaviour
         floor.Clear();
     }
 
-    public void ResetRoom()
+    /// <summary>
+    /// CLear all data used in generation
+    /// </summary>
+    private void ResetRoom()
     {
         xLength = 0;
         yLength = 0;
         xLengthHalf = 0;
         yLengthHalf = 0;
         
-        //environment = new();
         allRooms = new List<Room>();
         levelGrid = new Cell[settings.mapWidth, settings.mapHeight];
         
     }
     
-    public void RegenerateRoom()
-    {
-        ClearRoom();
-        ResetRoom();
-        InitGrid(levelGrid);
-        WalkerStart();
-        SetTiles();
-    }
-    
 
     #region Walker Generation
-
+    /// <summary>
+    /// Start the random walker algorithm
+    /// </summary>
     private void WalkerStart()
     {
 
-        walkers = new List<WalkerObject>();
+        walkers = new List<Walker>();
         
-        Vector3Int TileCenter = new Vector3Int(xLengthHalf, yLengthHalf, 0);
-        //Vector3Int TileCenter = Vector3Int.zero;
+        Vector3Int tileCenter = new Vector3Int(xLengthHalf, yLengthHalf, 0);
         
-        WalkerObject curWalker = new WalkerObject(new Vector2(TileCenter.x, TileCenter.y), WalkerManager.GetRandomDirection() , settings.redirectChance, settings.removeChance, settings.createChance);
-        levelGrid[TileCenter.x, TileCenter.y].Type = Cell.Types.Floor;
-        walkers.Add(curWalker);
+        Walker walker = new Walker(new Vector2(tileCenter.x, tileCenter.y), WalkerManager.GetRandomDirection() , settings.redirectChance, settings.removeChance, settings.createChance);
+        levelGrid[tileCenter.x, tileCenter.y].Type = Cell.Types.Floor;
+        walkers.Add(walker);
 
         tileCount++;
 
@@ -152,19 +139,22 @@ public class CaveGenerator : MonoBehaviour
         
     }
     
+    /// <summary>
+    /// Runs the main walker generation loop
+    /// </summary>
     private void WalkerGenerate()
     {
-        while ((float)tileCount / (float)levelGrid.Length < settings.fillPercentage)
+        while ((float)tileCount / levelGrid.Length < settings.fillPercentage)
         {
-            foreach (WalkerObject curWalker in walkers)
+            foreach (Walker walker in walkers)
             {
-                Vector3Int curPos = new Vector3Int((int)curWalker.Position.x, (int)curWalker.Position.y, 0);
+                Vector2Int gridPos = walker.IntPosition;
 
-                if (levelGrid[curPos.x, curPos.y].Type != Cell.Types.Floor)
-                {
-                    tileCount++;
-                    levelGrid[curPos.x, curPos.y].Type = Cell.Types.Floor;
-                }
+                // Ignore already set floors
+                if (levelGrid[gridPos.x, gridPos.y].Type == Cell.Types.Floor) continue;
+                
+                tileCount++;
+                levelGrid[gridPos.x, gridPos.y].Type = Cell.Types.Floor;
             }
 
             //Walker Methods
@@ -179,74 +169,82 @@ public class CaveGenerator : MonoBehaviour
     
     #region Cellular Automaton
     private Cell[,] copyGrid;
-public void AddCellularAutomaton(int iterations)
-{
-    // Pre-allocate the temporary grid if it doesn't exist or if grid size changed
-    if (copyGrid == null || copyGrid.GetLength(0) != xLength || copyGrid.GetLength(1) != yLength)
+    
+    /// <summary>
+    /// Applies the specified number of cellular automaton iterations to the grid
+    /// </summary>
+    /// <param name="iterations">Number of rounds of cellular automaton to run</param>
+    private void AddCellularAutomaton(int iterations)
     {
-        copyGrid = new Cell[xLength, yLength];
-        for (int x = 0; x < xLength; x++)
+        // Pre-allocate the temporary grid if it doesn't exist or if grid size changed
+        if (copyGrid == null || copyGrid.GetLength(0) != xLength || copyGrid.GetLength(1) != yLength)
         {
-            for (int y = 0; y < yLength; y++)
+            copyGrid = new Cell[xLength, yLength];
+            for (int x = 0; x < xLength; x++)
             {
-                copyGrid[x, y] = new Cell(x, y);
+                for (int y = 0; y < yLength; y++)
+                {
+                    copyGrid[x, y] = new Cell(x, y);
+                }
             }
         }
-    }
 
-    for (int i = 0; i < iterations; i++)
-    {
-        // Copy current grid state into the copy grid
-        CaveUtilities.CopyGrid(levelGrid, copyGrid, xLength, yLength);
-
-        for (int j = 0; j < xLength; j++)
+        for (int i = 0; i < iterations; i++)
         {
-            for (int k = 0; k < yLength; k++)
+            // Copy current grid state into the copy grid
+            // Uses copy grid as a snapshot to avoid using modified data during iteration
+            CaveUtilities.CopyGrid(levelGrid, copyGrid, xLength, yLength);
+
+            for (int x = 0; x < xLength; x++)
             {
-                int wallCount = 0;
-
-                for (int x = -1; x <= 1; x++)
+                for (int y = 0; y < yLength; y++)
                 {
-                    for (int y = -1; y <= 1; y++)
+                    int wallCount = 0;
+
+                    for (int dx = -1; dx <= 1; dx++)
                     {
-                        if (x == 0 && y == 0)
-                            continue;
-
-                        int neighborX = j + x;
-                        int neighborY = k + y;
-
-                        // If out of bounds, treat it as a wall
-                        if (neighborX < 0 || neighborX >= xLength ||
-                            neighborY < 0 || neighborY >= yLength)
+                        for (int dy = -1; dy <= 1; dy++)
                         {
-                            wallCount++;
-                        }
-                        else
-                        {
-                            // Read from the snapshot (copyGrid) to avoid using modified data
-                            // THIS PREVIOUSLY BROKE EVERYTHING
-                            Cell.Types currentType = copyGrid[neighborX, neighborY].Type;
-                            if (currentType == Cell.Types.Wall || currentType == Cell.Types.Null)
+                            // Ignore the current cell
+                            if (dx == 0 && dy == 0)
+                                continue;
+
+                            int neighborX = x + dx;
+                            int neighborY = y + dy;
+
+                            // If out of bounds, treat it as a wall
+                            if (neighborX < 0 || neighborX >= xLength ||
+                                neighborY < 0 || neighborY >= yLength)
                             {
                                 wallCount++;
                             }
+                            else
+                            {
+                                // Read from the snapshot (copyGrid) to avoid using modified data
+                                Cell.Types currentType = copyGrid[neighborX, neighborY].Type;
+                                if (currentType is Cell.Types.Wall or Cell.Types.Null)
+                                {
+                                    wallCount++;
+                                }
+                            }
                         }
                     }
-                }
 
-                // Apply automaton rules based on wall count
-                levelGrid[j, k].Type = (wallCount > 4)
-                    ? Cell.Types.Wall
-                    : Cell.Types.Floor;
+                    // Apply automaton rules based on wall count
+                    levelGrid[x, y].Type = wallCount > 4
+                        ? Cell.Types.Wall
+                        : Cell.Types.Floor;
+                }
             }
         }
     }
-}
     
     #endregion
 
     #region Room Creation
-    
+    /// <summary>
+    /// Finds all rooms in the grid and connects them if necessary
+    /// </summary>
     public void CreateRooms()
     {
         List<Room> newRooms = new();
@@ -258,9 +256,7 @@ public void AddCellularAutomaton(int iterations)
             
             newRooms = FindRooms();
             
-            //print(allRooms.Count);
-
-            // If there's only 1 room theres no need to connect
+            // If there's only 1 room there's no need to connect
             if (newRooms.Count == 1) break;
 
             // Sort rooms based on size
@@ -277,10 +273,13 @@ public void AddCellularAutomaton(int iterations)
         allRooms = newRooms;
     }
 
+    /// <summary>
+    /// Creates list of all grounds of connected floor tiles
+    /// </summary>
     private List<Room> FindRooms()
     {
         List<Room> currentRooms = new();
-                // Grid that marks each floor tile that's been visited
+        // Grid that marks each floor tile that's been visited
         bool[,] tilesVisited = new bool[xLength, yLength];
         // Stores the currently checked tiles
         Queue<Cell> queue = new();
@@ -324,9 +323,6 @@ public void AddCellularAutomaton(int iterations)
                             room.Add(levelGrid[x,y]);
                             
                             queue.Enqueue(levelGrid[x,y]);
-                    
-                        
-                        
                         }   
                     }
                 }
@@ -338,13 +334,17 @@ public void AddCellularAutomaton(int iterations)
                     currentRooms.Add(newRoom);
                 else
                     newRoom.ClearRoom();
-
             }
         }
-
         return currentRooms;
     }
 
+    
+    /// <summary>
+    /// Connect all rooms together, first to the biggest room, then to the closest room
+    /// </summary>
+    /// <param name="rooms">List of all available rooms</param>
+    /// <param name="forceAccessibility">Used during repeated loops to force connection to the closest room </param>
     private void ConnectRooms(List<Room> rooms, bool forceAccessibility = false)
     {
         // List of rooms NOT connected to main room
@@ -398,26 +398,22 @@ public void AddCellularAutomaton(int iterations)
                     continue;
 
                 // Loop through all the edge tiles in both rooms
-                for (int indexA = 0; indexA < a.edgeTiles.Count; indexA++)
+                foreach (var tileA in a.edgeTiles)
                 {
-                    for (int indexB = 0; indexB < b.edgeTiles.Count; indexB++)
+                    foreach (var tileB in b.edgeTiles)
                     {
-                        // Check the distance between the edges
-                        Cell tileA = a.edgeTiles[indexA];
-                        Cell tileB = b.edgeTiles[indexB];
                         int distance = CaveUtilities.TileDistance(tileA, tileB);
 
                         // If the distance is the shortest so far, store tiles and rooms
-                        if (distance < lowest || !possibleConnection)
-                        {
-                            lowest = distance;
-                            possibleConnection = true;
-                            bestTileA = tileA;
-                            bestTileB = tileB;
-                            bestRoomA = a;
-                            bestRoomB = b;
-                        }
-                    }   
+                        if (distance >= lowest && possibleConnection) continue;
+                        
+                        lowest = distance;
+                        possibleConnection = true;
+                        bestTileA = tileA;
+                        bestTileB = tileB;
+                        bestRoomA = a;
+                        bestRoomB = b;
+                    }
                 }
             }
 
@@ -442,9 +438,17 @@ public void AddCellularAutomaton(int iterations)
             ConnectRooms(rooms, true);
         }
         
-        // After all rooms are connected, apply one round of cellular automata to smoothen
+        // After all rooms are connected, apply one round of cellular automata to smoothen connections
         AddCellularAutomaton(1);
     }
+
+    /// <summary>
+    /// Draws a tunnel between two rooms
+    /// </summary>
+    /// <param name="a">Origin room</param>
+    /// <param name="b">Destination room</param>
+    /// <param name="origin">Where to start drawing the tunnel</param>>
+    /// <param name="destination">Where to finish drawing the tunnel</param>>
 
     private void CreateConnection(Room a, Room b, Cell origin, Cell destination)
     {
@@ -461,20 +465,30 @@ public void AddCellularAutomaton(int iterations)
 
     }
 
+    /// <summary>
+    /// Draw a circle of tiles of a given radius around a given tile 
+    /// </summary>
+    /// <param name="tile">Circle origin</param>
+    /// <param name="radius">Circle size </param>
     void DrawCircle(Cell tile, int radius)
     {
         for (int x = -radius; x <= radius; x++)
         {
             for (int y = -radius; y <= radius; y++)
             {
-                 int drawX = tile.x + x;
-                 int drawY = tile.y + y;
-                 if (CaveUtilities.IsInGrid(drawX, drawY, xLength, yLength))
-                     levelGrid[drawX, drawY].Type = Cell.Types.Floor;
+                int drawX = tile.x + x;
+                int drawY = tile.y + y;
+                if (CaveUtilities.IsInGrid(drawX, drawY, xLength, yLength))
+                    levelGrid[drawX, drawY].Type = Cell.Types.Floor;
             }   
         }
     }
 
+    /// <summary>
+    /// Generate list of cells between two points using Bresenhams Line Algorithm
+    /// </summary>
+    /// <param name="from">Origin cell</param>
+    /// <param name="to">Destination cell</param>
     private List<Cell> GetLine(Cell from, Cell to)
     {
         List<Cell> line = new();
@@ -530,131 +544,135 @@ public void AddCellularAutomaton(int iterations)
     }
     #endregion
 
-    // Add finishing touches to generated cave shape
-public void PolishRoom()
-{
-    bool madeEdit = true;
-    int failSafe = 0;
-
-    while (madeEdit && failSafe < 10)
+    /// <summary>
+    /// Custom algorithm that applies finishing touches to the room
+    /// </summary>
+    public void PolishRoom()
     {
-        madeEdit = false;
-        failSafe++;
+        bool madeEdit = true;
+        int failSafe = 0;
 
-        for (int i = 0; i < xLength; i++)
+        while (madeEdit && failSafe < 10)
         {
-            for (int j = 0; j < yLength; j++)
+            madeEdit = false;
+            failSafe++;
+
+            for (int i = 0; i < xLength; i++)
             {
-                Cell current = levelGrid[i, j];
-                Cell.Types currentType = current.Type;
-
-                bool isOutside = true;
-                int floorCount = 0;
-                int wallCount = 0;
-
-                // Loop surrounding 8 neighbors
-                for (int x = i - 1; x <= i + 1; x++)
+                for (int j = 0; j < yLength; j++)
                 {
-                    for (int y = j - 1; y <= j + 1; y++)
+                    Cell current = levelGrid[i, j];
+                    Cell.Types currentType = current.Type;
+
+                    bool isOutside = true;
+                    int floorCount = 0;
+                    int wallCount = 0;
+
+                    // Loop surrounding 8 neighbors
+                    for (int x = i - 1; x <= i + 1; x++)
                     {
-                        // Skip current cell
-                        if (x == i && y == j) continue;
-
-                        // Inline IsInGrid check
-                        bool inBounds = x >= 0 && x < xLength &&
-                                        y >= 0 && y < yLength;
-
-                        if (inBounds)
+                        for (int y = j - 1; y <= j + 1; y++)
                         {
-                            Cell.Types neighborType = levelGrid[x, y].Type;
+                            // Skip current cell
+                            if (x == i && y == j) continue;
 
-                            if (currentType == Cell.Types.Floor && neighborType == Cell.Types.Null)
-                            {
-                                current.Type = Cell.Types.Wall;
-                            }
+                            // Inline IsInGrid check
+                            bool inBounds = x >= 0 && x < xLength &&
+                                            y >= 0 && y < yLength;
 
-                            if (currentType == Cell.Types.Null && neighborType == Cell.Types.Floor)
+                            if (inBounds)
                             {
-                                current.Type = Cell.Types.Wall;
-                            }
+                                Cell.Types neighborType = levelGrid[x, y].Type;
 
-                            if (neighborType == Cell.Types.Floor)
-                            {
-                                isOutside = false;
-                                floorCount++;
-                            }
+                                if (currentType == Cell.Types.Floor && neighborType == Cell.Types.Null)
+                                {
+                                    current.Type = Cell.Types.Wall;
+                                }
 
-                            if (neighborType == Cell.Types.Wall)
-                            {
-                                wallCount++;
+                                if (currentType == Cell.Types.Null && neighborType == Cell.Types.Floor)
+                                {
+                                    current.Type = Cell.Types.Wall;
+                                }
+
+                                if (neighborType == Cell.Types.Floor)
+                                {
+                                    isOutside = false;
+                                    floorCount++;
+                                }
+
+                                if (neighborType == Cell.Types.Wall)
+                                {
+                                    wallCount++;
+                                }
                             }
-                        }
-                        else
-                        {
-                            if (currentType == Cell.Types.Floor)
+                            else
                             {
-                                current.Type = Cell.Types.Wall;
+                                if (currentType == Cell.Types.Floor)
+                                {
+                                    current.Type = Cell.Types.Wall;
+                                }
                             }
                         }
                     }
-                }
 
-                // Floor surrounded by walls
-                if (wallCount >= 6 && current.Type == Cell.Types.Floor)
-                {
-                    current.Type = Cell.Types.Wall;
-                    madeEdit = true;
-                }
-
-                // Wall surrounded by floor
-                if (floorCount >= 6 && current.Type == Cell.Types.Wall)
-                {
-                    current.Type = Cell.Types.Floor;
-                    madeEdit = true;
-                }
-
-                // Remove walls that are outside
-                if (isOutside && current.Type != Cell.Types.Null)
-                {
-                    current.Type = Cell.Types.Null;
-                    madeEdit = true;
-                }
-
-                // Check thin horizontal corridors (guarded bounds check)
-                if (current.Type == Cell.Types.Floor && i > 0 && i < xLength - 1)
-                {
-                    var left = levelGrid[i - 1, j];
-                    var right = levelGrid[i + 1, j];
-
-                    if (left.Type == Cell.Types.Wall && right.Type == Cell.Types.Wall)
+                    // Floor surrounded by walls
+                    if (wallCount >= 6 && current.Type == Cell.Types.Floor)
                     {
-                        left.Type = Cell.Types.Floor;
-                        right.Type = Cell.Types.Floor;
+                        current.Type = Cell.Types.Wall;
                         madeEdit = true;
                     }
-                }
 
-                // Check thin vertical corridors (guarded bounds check)
-                if (current.Type == Cell.Types.Floor && j > 0 && j < yLength - 1)
-                {
-                    var top = levelGrid[i, j - 1];
-                    var bottom = levelGrid[i, j + 1];
-
-                    if (top.Type == Cell.Types.Wall && bottom.Type == Cell.Types.Wall)
+                    // Wall surrounded by floor
+                    if (floorCount >= 6 && current.Type == Cell.Types.Wall)
                     {
-                        top.Type = Cell.Types.Floor;
-                        bottom.Type = Cell.Types.Floor;
+                        current.Type = Cell.Types.Floor;
                         madeEdit = true;
+                    }
+
+                    // Remove walls that are outside
+                    if (isOutside && current.Type != Cell.Types.Null)
+                    {
+                        current.Type = Cell.Types.Null;
+                        madeEdit = true;
+                    }
+
+                    // Check thin horizontal corridors (guarded bounds check)
+                    if (current.Type == Cell.Types.Floor && i > 0 && i < xLength - 1)
+                    {
+                        var left = levelGrid[i - 1, j];
+                        var right = levelGrid[i + 1, j];
+
+                        if (left.Type == Cell.Types.Wall && right.Type == Cell.Types.Wall)
+                        {
+                            left.Type = Cell.Types.Floor;
+                            right.Type = Cell.Types.Floor;
+                            madeEdit = true;
+                        }
+                    }
+
+                    // Check thin vertical corridors (guarded bounds check)
+                    if (current.Type == Cell.Types.Floor && j > 0 && j < yLength - 1)
+                    {
+                        var top = levelGrid[i, j - 1];
+                        var bottom = levelGrid[i, j + 1];
+
+                        if (top.Type == Cell.Types.Wall && bottom.Type == Cell.Types.Wall)
+                        {
+                            top.Type = Cell.Types.Floor;
+                            bottom.Type = Cell.Types.Floor;
+                            madeEdit = true;
+                        }
                     }
                 }
             }
         }
     }
-}
 
     #region Environment
-
-    // Fill the floor tiles with random environment tiles
+    
+    /// <summary>
+    /// Generates environment tiles such as rocks based on a perlin noise map
+    /// </summary>
     private void GenerateEnvironment()
     {
         // Randomly place rocks etc
@@ -698,6 +716,9 @@ public void PolishRoom()
     }
     #endregion
     
+    /// <summary>
+    /// Instantiate all game objects based on the grid data
+    /// </summary>
     private void SetTiles()
     {
         for(int x = 0; x < xLength; x++)
@@ -765,11 +786,17 @@ public class Cell
 
     //public bool isConnected;
 
+    /// <summary>
+    /// Check if tile is empty floor
+    /// </summary>
     public bool IsEmpty()
     {
         return Type == Types.Floor && Tile == Tiles.Empty;
     }
     
+    /// <summary>
+    /// Clear any environment tile on this cell
+    /// </summary>
     public void ClearTile()
     {
         Tile = Tiles.Empty;
@@ -793,6 +820,7 @@ public class Room : IComparable<Room>
         roomSize = tiles.Count;
         connectedRooms = new();
 
+        // Store edge tiles of room when created
         edgeTiles = new();
         foreach (Cell tile in tiles)
         {
@@ -831,15 +859,14 @@ public class Room : IComparable<Room>
         }
     }
 
-    public void SetAccessible()
+    private void SetAccessible()
     {
-        if (!isAcessible)
+        if (isAcessible) return;
+        
+        isAcessible = true;
+        foreach (Room connectedRoom in connectedRooms)
         {
-            isAcessible = true;
-            foreach (Room connectedRoom in connectedRooms)
-            {
-                connectedRoom.SetAccessible();
-            }
+            connectedRoom.SetAccessible();
         }
 
     }
@@ -862,7 +889,7 @@ public class Room : IComparable<Room>
 
     public int CompareTo(Room other)
     {
-        return other.roomSize.CompareTo(this.roomSize);
+        return other.roomSize.CompareTo(roomSize);
     }
 
 }
