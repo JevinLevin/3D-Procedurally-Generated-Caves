@@ -63,27 +63,6 @@ public class CaveGenerator : MonoBehaviour
 
 
     }
-
-    private void CopyGrid(Cell[,] source, Cell[,] destination)
-    {
-        for (int column = 0; column < xLength; ++column)
-        {
-            for (int row = 0; row < yLength; ++row)
-            {
-                destination[column, row].Type = source[column, row].Type;
-            }
-        }
-    }
-    
-    private bool IsInGrid(int x, int y)
-    {
-        return x >= 0 && x < xLength && y >= 0 && y < yLength;
-    }
-    
-    private int TileDistance(Cell a, Cell b)
-    {
-        return (int)Mathf.Pow(a.x - b.x, 2) + (int)Mathf.Pow(a.y - b.y, 2);
-    }
     
 
     [Button]
@@ -218,7 +197,7 @@ public void AddCellularAutomaton(int iterations)
     for (int i = 0; i < iterations; i++)
     {
         // Copy current grid state into the copy grid
-        CopyGrid(levelGrid, copyGrid);
+        CaveUtilities.CopyGrid(levelGrid, copyGrid, xLength, yLength);
 
         for (int j = 0; j < xLength; j++)
         {
@@ -334,7 +313,7 @@ public void AddCellularAutomaton(int iterations)
                             // If the tile is diagonal
                             if (x != current.x && y != current.y) continue;
                             // If the tile is not in the grid
-                            if (!IsInGrid(x, y)) continue;
+                            if (!CaveUtilities.IsInGrid(x, y, xLength, yLength)) continue;
                             // If the tile has already been checked
                             if (tilesVisited[x, y]) continue;
                             // If the tile isn't a floor
@@ -426,7 +405,7 @@ public void AddCellularAutomaton(int iterations)
                         // Check the distance between the edges
                         Cell tileA = a.edgeTiles[indexA];
                         Cell tileB = b.edgeTiles[indexB];
-                        int distance = TileDistance(tileA, tileB);
+                        int distance = CaveUtilities.TileDistance(tileA, tileB);
 
                         // If the distance is the shortest so far, store tiles and rooms
                         if (distance < lowest || !possibleConnection)
@@ -490,7 +469,7 @@ public void AddCellularAutomaton(int iterations)
             {
                  int drawX = tile.x + x;
                  int drawY = tile.y + y;
-                 if (IsInGrid(drawX, drawY))
+                 if (CaveUtilities.IsInGrid(drawX, drawY, xLength, yLength))
                      levelGrid[drawX, drawY].Type = Cell.Types.Floor;
             }   
         }
