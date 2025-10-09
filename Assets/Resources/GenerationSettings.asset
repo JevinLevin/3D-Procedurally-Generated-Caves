@@ -1,0 +1,25 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b32f3f761d5223c4888ecead05d1b083, type: 3}
+  m_Name: GenerationSettings
+  m_EditorClassIdentifier: Assembly-CSharp::GenerationSettingsScriptableObject
+  mapWidth: 100
+  mapHeight: 100
+  roomThreshold: 6
+  maximumWalkers: 10
+  redirectChance: 0.05
+  removeChance: 0.5
+  createChance: 0.75
+  fillPercentage: 0.2
+  cAIterations: 3
+  environmentPerlinScale: 0.5
+  environmentPerlin: 0.275
