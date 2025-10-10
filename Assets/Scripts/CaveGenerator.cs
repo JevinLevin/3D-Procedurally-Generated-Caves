@@ -17,11 +17,14 @@ public class CaveGenerator : MonoBehaviour
 
 
 
-    public static Cell[,] levelGrid;
-    public static int xLength;
-    public static int yLength;
-    public static int xLengthHalf;
-    public static int yLengthHalf;
+    public CaveCell[,,] levelGrid;
+    public CaveMask[,] levelMask;
+    public static int xWidth;
+    public static int yWidth;
+    public static int zWidth;
+    public static int xWidthHalf => xWidth / 2;
+    public static int yWidthHalf => yWidth / 2;
+    public static int zWidthHalf => zWidth / 2;
 
     private List<Walker> walkers;
     private int tileCount;
@@ -33,26 +36,28 @@ public class CaveGenerator : MonoBehaviour
     /// Initialises the grid used for generation
     /// </summary>
     /// <param name="grid">Holds cave data</param>
-    private void InitGrid(Cell[,] grid)
+    private void InitGrid(CaveCell[,,] grid)
     {
-        // Set seed
-        if (randomSeed)
-            seed = Random.Range(int.MinValue, int.MaxValue);
+        // Set blank tiles
+        for (int x = 0; x < grid.GetLength(0); x++)
+            for (int y = 0; y < grid.GetLength(1); y++)
+                for(int z = 0; z < grid.GetLength(2); z++)
+                    grid[x, y, z] = new CaveCell(x,y,z);
         
-        Random.InitState(seed);
-        
+        xWidth = levelGrid.GetLength(0);
+        yWidth = levelGrid.GetLength(1);
+        zWidth = levelGrid.GetLength(2);
+    }
+    
+    private void InitGrid(CaveMask[,] grid)
+    {
         // Set blank tiles
         for (int i = 0; i < grid.GetLength(0); i++)
             for (int j = 0; j < grid.GetLength(1); j++)
-                grid[i, j] = new Cell(i,j);
-        
-        xLength = levelGrid.GetLength(0);
-        yLength = levelGrid.GetLength(1);
-        xLengthHalf = xLength / 2;
-        yLengthHalf = yLength / 2;
-
-
+                grid[i, j] = new CaveMask(i,j);
     }
+    
+    
     
 
     /// <summary>
@@ -61,12 +66,17 @@ public class CaveGenerator : MonoBehaviour
     [Button]
     private void FullGenerate()
     {
+        // Set seed
+        if (randomSeed)
+            seed = Random.Range(int.MinValue, int.MaxValue);
+        Random.InitState(seed);
         
         // Clear anything left over
         ClearRoom();
         ResetRoom();
         // Initialise Room
         InitGrid(levelGrid);
+        InitGrid(levelMask);
         
         // Generate initial shape
         WalkerStart();
@@ -78,6 +88,8 @@ public class CaveGenerator : MonoBehaviour
         PolishRoom();
         CreateRooms();
         PolishRoom();
+        
+        AddHeight();
         
         // Spawn environment tiles
         GenerateEnvironment();
@@ -107,13 +119,13 @@ public class CaveGenerator : MonoBehaviour
     /// </summary>
     private void ResetRoom()
     {
-        xLength = 0;
-        yLength = 0;
-        xLengthHalf = 0;
-        yLengthHalf = 0;
+        xWidth = 0;
+        yWidth = 0;
+        zWidth = 0;
         
         allRooms = new List<Room>();
-        levelGrid = new Cell[settings.mapWidth, settings.mapHeight];
+        levelGrid = new CaveCell[settings.mapSize.x, settings.maxHeight, settings.mapSize.y];
+        levelMask = new CaveMask[settings.mapSize.x, settings.mapSize.y];
         
     }
     
@@ -127,10 +139,10 @@ public class CaveGenerator : MonoBehaviour
 
         walkers = new List<Walker>();
         
-        Vector3Int tileCenter = new Vector3Int(xLengthHalf, yLengthHalf, 0);
+        Vector3Int tileCenter = new Vector3Int(xWidthHalf, zWidthHalf, 0);
         
         Walker walker = new Walker(new Vector2(tileCenter.x, tileCenter.y), WalkerManager.GetRandomDirection() , settings.redirectChance, settings.removeChance, settings.createChance);
-        levelGrid[tileCenter.x, tileCenter.y].Type = Cell.Types.Floor;
+        levelMask[tileCenter.x, tileCenter.y].active = true;
         walkers.Add(walker);
 
         tileCount++;
@@ -144,31 +156,31 @@ public class CaveGenerator : MonoBehaviour
     /// </summary>
     private void WalkerGenerate()
     {
-        while ((float)tileCount / levelGrid.Length < settings.fillPercentage)
+        while ((float)tileCount / levelMask.Length < settings.fillPercentage)
         {
             foreach (Walker walker in walkers)
             {
                 Vector2Int gridPos = walker.IntPosition;
 
                 // Ignore already set floors
-                if (levelGrid[gridPos.x, gridPos.y].Type == Cell.Types.Floor) continue;
+                if (levelMask[gridPos.x, gridPos.y].active) continue;
                 
                 tileCount++;
-                levelGrid[gridPos.x, gridPos.y].Type = Cell.Types.Floor;
+                levelMask[gridPos.x, gridPos.y].active = true;
             }
 
             //Walker Methods
             WalkerManager.ChanceToRemove(walkers);
             WalkerManager.ChanceToRedirect(walkers);
             WalkerManager.ChanceToCreate(walkers, settings.maximumWalkers, settings.redirectChance, settings.removeChance, settings.createChance);
-            WalkerManager.UpdatePosition(walkers, xLength, yLength);
+            WalkerManager.UpdatePosition(walkers, xWidth, zWidth);
         }
     }
     
     #endregion
     
     #region Cellular Automaton
-    private Cell[,] copyGrid;
+    private CaveMask[,] copyGrid;
     
     /// <summary>
     /// Applies the specified number of cellular automaton iterations to the grid
@@ -177,14 +189,14 @@ public class CaveGenerator : MonoBehaviour
     private void AddCellularAutomaton(int iterations)
     {
         // Pre-allocate the temporary grid if it doesn't exist or if grid size changed
-        if (copyGrid == null || copyGrid.GetLength(0) != xLength || copyGrid.GetLength(1) != yLength)
+        if (copyGrid == null || copyGrid.GetLength(0) != xWidth || copyGrid.GetLength(1) != zWidth)
         {
-            copyGrid = new Cell[xLength, yLength];
-            for (int x = 0; x < xLength; x++)
+            copyGrid = new CaveMask[xWidth, zWidth];
+            for (int x = 0; x < xWidth; x++)
             {
-                for (int y = 0; y < yLength; y++)
+                for (int y = 0; y < zWidth; y++)
                 {
-                    copyGrid[x, y] = new Cell(x, y);
+                    copyGrid[x, y] = new CaveMask(x, y);
                 }
             }
         }
@@ -193,13 +205,13 @@ public class CaveGenerator : MonoBehaviour
         {
             // Copy current grid state into the copy grid
             // Uses copy grid as a snapshot to avoid using modified data during iteration
-            CaveUtilities.CopyGrid(levelGrid, copyGrid, xLength, yLength);
+            CaveUtilities.CopyGrid(levelMask, copyGrid, xWidth, zWidth);
 
-            for (int x = 0; x < xLength; x++)
+            for (int x = 0; x < xWidth; x++)
             {
-                for (int y = 0; y < yLength; y++)
+                for (int y = 0; y < zWidth; y++)
                 {
-                    int wallCount = 0;
+                    int offCount = 0;
 
                     for (int dx = -1; dx <= 1; dx++)
                     {
@@ -212,28 +224,25 @@ public class CaveGenerator : MonoBehaviour
                             int neighborX = x + dx;
                             int neighborY = y + dy;
 
-                            // If out of bounds, treat it as a wall
-                            if (neighborX < 0 || neighborX >= xLength ||
-                                neighborY < 0 || neighborY >= yLength)
+                            // If out of bounds, treat it as off
+                            if (neighborX < 0 || neighborX >= xWidth ||
+                                neighborY < 0 || neighborY >= zWidth)
                             {
-                                wallCount++;
+                                offCount++;
                             }
                             else
                             {
                                 // Read from the snapshot (copyGrid) to avoid using modified data
-                                Cell.Types currentType = copyGrid[neighborX, neighborY].Type;
-                                if (currentType is Cell.Types.Wall or Cell.Types.Null)
+                                if (!copyGrid[neighborX, neighborY].active)
                                 {
-                                    wallCount++;
+                                    offCount++;
                                 }
                             }
                         }
                     }
 
-                    // Apply automaton rules based on wall count
-                    levelGrid[x, y].Type = wallCount > 4
-                        ? Cell.Types.Wall
-                        : Cell.Types.Floor;
+                    // Apply automaton rules based on off count
+                    levelMask[x, y].active = offCount <= 4;
                 }
             }
         }
@@ -280,54 +289,54 @@ public class CaveGenerator : MonoBehaviour
     {
         List<Room> currentRooms = new();
         // Grid that marks each floor tile that's been visited
-        bool[,] tilesVisited = new bool[xLength, yLength];
+        bool[,] tilesVisited = new bool[xWidth, zWidth];
         // Stores the currently checked tiles
-        Queue<Cell> queue = new();
+        Queue<CaveMask> queue = new();
         
         // Loop through grid to find first clean tile
-        for (int i = 0; i < xLength; i++)
+        for (int i = 0; i < xWidth; i++)
         {
-            for (int j = 0; j < yLength; j++)
+            for (int j = 0; j < zWidth; j++)
             {
-                // Ignore if not a floor
-                if (levelGrid[i, j].Type != Cell.Types.Floor) continue;
+                // Ignore if off
+                if (!levelMask[i, j].active) continue;
                 // Ignore if already in a room
                 if (tilesVisited[i, j]) continue;
 
                 // This must be a clean room
-                queue.Enqueue(levelGrid[i,j]);
+                queue.Enqueue(levelMask[i,j]);
 
-                List<Cell> room = new();
+                List<CaveMask> room = new();
 
                 while (queue.Count > 0)
                 {
-                    Cell current = queue.Dequeue();
+                    CaveMask current = queue.Dequeue();
 
                     // Loop all surrounding tiles
                     for (int x = current.x - 1; x <= current.x + 1; x++)
                     {
-                        for (int y = current.y - 1; y <= current.y + 1; y++)
+                        for (int y = current.z - 1; y <= current.z + 1; y++)
                         {
                             // Skip tile if
                             // If the tile is diagonal
-                            if (x != current.x && y != current.y) continue;
+                            if (x != current.x && y != current.z) continue;
                             // If the tile is not in the grid
-                            if (!CaveUtilities.IsInGrid(x, y, xLength, yLength)) continue;
+                            if (!CaveUtilities.IsInGrid(x, y, xWidth, zWidth)) continue;
                             // If the tile has already been checked
                             if (tilesVisited[x, y]) continue;
                             // If the tile isn't a floor
-                            if (levelGrid[x, y].Type != Cell.Types.Floor) continue;
+                            if (!levelMask[x, y].active) continue;
 
                             tilesVisited[x, y] = true;
                             
-                            room.Add(levelGrid[x,y]);
+                            room.Add(levelMask[x,y]);
                             
-                            queue.Enqueue(levelGrid[x,y]);
+                            queue.Enqueue(levelMask[x,y]);
                         }   
                     }
                 }
 
-                Room newRoom = new Room(room, levelGrid);
+                Room newRoom = new Room(room, levelMask);
 
                 // Only add room if it's big enough
                 if (newRoom.roomSize > settings.roomThreshold)
@@ -370,8 +379,8 @@ public class CaveGenerator : MonoBehaviour
         
         int lowest = 0;
 
-        Cell bestTileA = new Cell();
-        Cell bestTileB = new Cell();
+        CaveMask bestTileA = new CaveMask();
+        CaveMask bestTileB = new CaveMask();
         Room bestRoomA = new Room();
         Room bestRoomB = new Room();
 
@@ -450,15 +459,15 @@ public class CaveGenerator : MonoBehaviour
     /// <param name="origin">Where to start drawing the tunnel</param>>
     /// <param name="destination">Where to finish drawing the tunnel</param>>
 
-    private void CreateConnection(Room a, Room b, Cell origin, Cell destination)
+    private void CreateConnection(Room a, Room b, CaveMask origin, CaveMask destination)
     {
         Room.ConnectRooms(a,b);
         
         //Debug.DrawLine(TileToPositionZ(origin)+Vector3.up*1.5f, TileToPositionZ(destination)+Vector3.up*1.5f, Color.green, 100);
 
-        List<Cell> line = GetLine(origin, destination);
+        List<CaveMask> line = GetLine(origin, destination);
 
-        foreach (Cell tile in line)
+        foreach (CaveMask tile in line)
         {
             DrawCircle(tile, 1);
         }
@@ -470,16 +479,16 @@ public class CaveGenerator : MonoBehaviour
     /// </summary>
     /// <param name="tile">Circle origin</param>
     /// <param name="radius">Circle size </param>
-    void DrawCircle(Cell tile, int radius)
+    void DrawCircle(CaveMask tile, int radius)
     {
         for (int x = -radius; x <= radius; x++)
         {
             for (int y = -radius; y <= radius; y++)
             {
                 int drawX = tile.x + x;
-                int drawY = tile.y + y;
-                if (CaveUtilities.IsInGrid(drawX, drawY, xLength, yLength))
-                    levelGrid[drawX, drawY].Type = Cell.Types.Floor;
+                int drawY = tile.z + y;
+                if (CaveUtilities.IsInGrid(drawX, drawY, xWidth, zWidth))
+                    levelMask[drawX, drawY].active = true;
             }   
         }
     }
@@ -489,16 +498,16 @@ public class CaveGenerator : MonoBehaviour
     /// </summary>
     /// <param name="from">Origin cell</param>
     /// <param name="to">Destination cell</param>
-    private List<Cell> GetLine(Cell from, Cell to)
+    private List<CaveMask> GetLine(CaveMask from, CaveMask to)
     {
-        List<Cell> line = new();
+        List<CaveMask> line = new();
 
         // Bresenhams Line Generation Algorithm to calculate cells
         int x = from.x;
-        int y = from.y;
+        int y = from.z;
 
         int dx = to.x - from.x;
-        int dy = to.y - from.y;
+        int dy = to.z - from.z;
 
         bool inverted = false;
         
@@ -520,7 +529,7 @@ public class CaveGenerator : MonoBehaviour
         int gradientAccumulation = longest / 2;
         for (int i = 0; i < longest; i++)
         {
-            line.Add(levelGrid[x, y]);
+            line.Add(levelMask[x, y]);
 
             if (inverted)
                 y += step;
@@ -544,6 +553,16 @@ public class CaveGenerator : MonoBehaviour
     }
     #endregion
 
+    #region Height
+
+    private void AddHeight()
+    {
+        
+    }
+
+    #endregion
+
+    # region Polish
     /// <summary>
     /// Custom algorithm that applies finishing touches to the room
     /// </summary>
@@ -557,16 +576,15 @@ public class CaveGenerator : MonoBehaviour
             madeEdit = false;
             failSafe++;
 
-            for (int i = 0; i < xLength; i++)
+            for (int i = 0; i < xWidth; i++)
             {
-                for (int j = 0; j < yLength; j++)
+                for (int j = 0; j < zWidth; j++)
                 {
-                    Cell current = levelGrid[i, j];
-                    Cell.Types currentType = current.Type;
+                    CaveMask current = levelMask[i, j];
+                    bool currentActive = current.active;
 
-                    bool isOutside = true;
-                    int floorCount = 0;
-                    int wallCount = 0;
+                    int onCount = 0;
+                    int offCount = 0;
 
                     // Loop surrounding 8 neighbors
                     for (int x = i - 1; x <= i + 1; x++)
@@ -577,89 +595,69 @@ public class CaveGenerator : MonoBehaviour
                             if (x == i && y == j) continue;
 
                             // Inline IsInGrid check
-                            bool inBounds = x >= 0 && x < xLength &&
-                                            y >= 0 && y < yLength;
+                            bool inBounds = x >= 0 && x < xWidth &&
+                                            y >= 0 && y < zWidth;
 
                             if (inBounds)
                             {
-                                Cell.Types neighborType = levelGrid[x, y].Type;
-
-                                if (currentType == Cell.Types.Floor && neighborType == Cell.Types.Null)
+                                if (levelMask[x, y].active)
                                 {
-                                    current.Type = Cell.Types.Wall;
+                                    onCount++;
                                 }
-
-                                if (currentType == Cell.Types.Null && neighborType == Cell.Types.Floor)
+                                
+                                if (!levelMask[x, y].active)
                                 {
-                                    current.Type = Cell.Types.Wall;
-                                }
-
-                                if (neighborType == Cell.Types.Floor)
-                                {
-                                    isOutside = false;
-                                    floorCount++;
-                                }
-
-                                if (neighborType == Cell.Types.Wall)
-                                {
-                                    wallCount++;
+                                    offCount++;
                                 }
                             }
                             else
                             {
-                                if (currentType == Cell.Types.Floor)
+                                if (currentActive)
                                 {
-                                    current.Type = Cell.Types.Wall;
+                                    current.active = false;
                                 }
                             }
                         }
                     }
 
                     // Floor surrounded by walls
-                    if (wallCount >= 6 && current.Type == Cell.Types.Floor)
+                    if (offCount >= 6 && current.active)
                     {
-                        current.Type = Cell.Types.Wall;
+                        current.active = false;
                         madeEdit = true;
                     }
 
                     // Wall surrounded by floor
-                    if (floorCount >= 6 && current.Type == Cell.Types.Wall)
+                    if (onCount >= 6 && !current.active)
                     {
-                        current.Type = Cell.Types.Floor;
-                        madeEdit = true;
-                    }
-
-                    // Remove walls that are outside
-                    if (isOutside && current.Type != Cell.Types.Null)
-                    {
-                        current.Type = Cell.Types.Null;
+                        current.active = true;
                         madeEdit = true;
                     }
 
                     // Check thin horizontal corridors (guarded bounds check)
-                    if (current.Type == Cell.Types.Floor && i > 0 && i < xLength - 1)
+                    if (current.active && i > 0 && i < xWidth - 1)
                     {
-                        var left = levelGrid[i - 1, j];
-                        var right = levelGrid[i + 1, j];
+                        var left = levelMask[i - 1, j];
+                        var right = levelMask[i + 1, j];
 
-                        if (left.Type == Cell.Types.Wall && right.Type == Cell.Types.Wall)
+                        if (!left.active && !right.active)
                         {
-                            left.Type = Cell.Types.Floor;
-                            right.Type = Cell.Types.Floor;
+                            left.active = true;
+                            right.active = true;
                             madeEdit = true;
                         }
                     }
 
                     // Check thin vertical corridors (guarded bounds check)
-                    if (current.Type == Cell.Types.Floor && j > 0 && j < yLength - 1)
+                    if (current.active && j > 0 && j < zWidth - 1)
                     {
-                        var top = levelGrid[i, j - 1];
-                        var bottom = levelGrid[i, j + 1];
+                        var top = levelMask[i, j - 1];
+                        var bottom = levelMask[i, j + 1];
 
-                        if (top.Type == Cell.Types.Wall && bottom.Type == Cell.Types.Wall)
+                        if (!top.active && !bottom.active)
                         {
-                            top.Type = Cell.Types.Floor;
-                            bottom.Type = Cell.Types.Floor;
+                            top.active = true;
+                            bottom.active = true;
                             madeEdit = true;
                         }
                     }
@@ -667,6 +665,7 @@ public class CaveGenerator : MonoBehaviour
             }
         }
     }
+    #endregion
 
     #region Environment
     
@@ -678,15 +677,15 @@ public class CaveGenerator : MonoBehaviour
         // Randomly place rocks etc
         
         // Create noise map based on size and scale
-        float[,] noiseMap = new float[xLength, yLength];
+        float[,] noiseMap = new float[xWidth, zWidth];
         float noiseValue = 0.0f;
         // Generate random offsets using a seed
         float offsetX = Random.Range(0f, 10000f);
         float offsetY = Random.Range(0f, 10000f);
 
-        for (int x = 0; x < xLength; x++)
+        for (int x = 0; x < xWidth; x++)
         {
-            for (int y = 0; y < yLength; y++)
+            for (int y = 0; y < zWidth; y++)
             {
                 float sampleX = (x * settings.environmentPerlinScale) + offsetX;
                 float sampleY = (y * settings.environmentPerlinScale) + offsetY;
@@ -698,19 +697,19 @@ public class CaveGenerator : MonoBehaviour
         
         
         // Set all empty floor tiles based on noise map
-        for (int i = 0; i < xLength; i++)
+        for (int i = 0; i < xWidth; i++)
         {
-            for (int j = 0; j < yLength; j++)
+            for (int j = 0; j < zWidth; j++)
             {
-                Cell current = levelGrid[i,j];
+                CaveMask current = levelMask[i,j];
                 
-                if(!current.IsEmpty())
+                if(!current.active)
                     continue;
                 
 
                 noiseValue = noiseMap[i, j];
-                if (noiseValue < settings.environmentPerlin)
-                    current.Tile = Cell.Tiles.Environment;
+                //if (noiseValue < settings.environmentPerlin)
+                //    current.Tile = CaveMask.Tiles.Environment;
             }   
         }
     }
@@ -721,15 +720,15 @@ public class CaveGenerator : MonoBehaviour
     /// </summary>
     private void SetTiles()
     {
-        for(int x = 0; x < xLength; x++)
+        for(int x = 0; x < xWidth; x++)
         {
-            for(int y = 0; y < yLength; y++)
+            for(int y = 0; y < zWidth; y++)
             {
-                Cell current = levelGrid[x,y];
+                CaveMask current = levelMask[x,y];
                 
-                if (current.Type == Cell.Types.Floor)
+                if (current.active)
                 {
-                    floor.Add(Instantiate(floorCube, current.WorldPosition, Quaternion.identity, transform));
+                    floor.Add(Instantiate(floorCube, new Vector3(current.x - CaveGenerator.xWidthHalf, 0, current.z - CaveGenerator.zWidthHalf), Quaternion.identity, transform));
                 }
             }
         }
@@ -738,62 +737,44 @@ public class CaveGenerator : MonoBehaviour
         
 }
 [Serializable]
-public class Cell
+public class CaveCell
 {
-    public enum Types
-    {
-        Floor,
-        Wall,
-        Null
-    }
-
     public enum Tiles
     {
         Empty,
         Environment,
     }
 
-    public int x, y;
+    public int x, y, z;
     
 
-    public Types Type { get; set; }
     public Tiles Tile { get; set; }
     
-    public Vector2Int AsVector2 => new Vector2Int(x, y);
-    public Vector3 WorldPosition => new Vector3(x - CaveGenerator.xLengthHalf, 0, y - CaveGenerator.yLengthHalf);
+    public Vector3 WorldPosition => new Vector3(x - CaveGenerator.xWidthHalf, y - CaveGenerator.yWidthHalf, z - CaveGenerator.zWidthHalf);
 
-    public Cell()
+    public CaveCell()
     {
         x = 0;
         y = 0;
+        z = 0;
     }
 
-    public Cell(int x, int y)
+    public CaveCell(int x, int y, int z)
     {
         this.x = x;
         this.y = y;
-        Type = Types.Null;
+        this.z = z;
         Tile = Tiles.Empty;
     }
     
-    public Cell(Cell copy)
+    public CaveCell(CaveCell copy)
     {
         x = copy.x;
         y = copy.y;
-        Type = copy.Type;
+        z = copy.z;
         Tile = copy.Tile;
     }
 
-    //public bool isConnected;
-
-    /// <summary>
-    /// Check if tile is empty floor
-    /// </summary>
-    public bool IsEmpty()
-    {
-        return Type == Types.Floor && Tile == Tiles.Empty;
-    }
-    
     /// <summary>
     /// Clear any environment tile on this cell
     /// </summary>
@@ -803,10 +784,35 @@ public class Cell
     }
 
 }
+[Serializable]
+public struct CaveMask
+{
+    public CaveMask(int x, int z)
+    {
+        this.x = x;
+        this.z = z;
+        active = false;
+    }
+    
+    public CaveMask(CaveMask copy)
+    {
+        x = copy.x;
+        z = copy.z;
+        active = copy.active;
+    }
+    
+    public bool active;
+
+    public int x,z;
+
+    public void Toggle() => active = !active;
+    public void Disable() => active = false;
+    
+}
 public class Room : IComparable<Room>
 {
-    public List<Cell> tiles;
-    public List<Cell> edgeTiles;
+    public List<CaveMask> tiles;
+    public List<CaveMask> edgeTiles;
     public List<Room> connectedRooms;
     public int roomSize;
 
@@ -814,7 +820,7 @@ public class Room : IComparable<Room>
     public bool isMain;
 
     public Room(){}
-    public Room(List<Cell> roomTiles, Cell[,] grid)
+    public Room(List<CaveMask> roomTiles, CaveMask[,] grid)
     {
         tiles = roomTiles;
         roomSize = tiles.Count;
@@ -822,22 +828,22 @@ public class Room : IComparable<Room>
 
         // Store edge tiles of room when created
         edgeTiles = new();
-        foreach (Cell tile in tiles)
+        foreach (CaveMask tile in tiles)
         {
             bool skip = false;
             // Loop all surrounding tiles
             for (int x = tile.x - 1; x <= tile.x + 1; x++)
             {
                 if (skip) break;
-                for (int y = tile.y - 1; y <= tile.y + 1; y++)
+                for (int y = tile.z - 1; y <= tile.z + 1; y++)
                 {
                     // Skip tile if
                     // If the tile is not in the grid
                     if (!(x >= 0 && x < grid.GetLength(0) && y >= 0 && y < grid.GetLength(1))) continue;
                     // If the tile is diagonal
-                    if (!(x == tile.x || y == tile.y)) continue;
-                    // If the tile isnt a wall
-                    if (grid[x, y].Type != Cell.Types.Wall) continue;
+                    if (!(x == tile.x || y == tile.z)) continue;
+                    // If the tile is acticve
+                    if (grid[x, y].active) continue;
 
                     edgeTiles.Add(tile);
                     skip = true;
@@ -853,9 +859,9 @@ public class Room : IComparable<Room>
 
     public void ClearRoom()
     {
-        foreach (Cell tile in tiles)
+        foreach (CaveMask tile in tiles)
         {
-            tile.Type = Cell.Types.Null;
+            tile.Disable();
         }
     }
 

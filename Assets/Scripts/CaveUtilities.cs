@@ -11,13 +11,13 @@ public static class CaveUtilities
     /// <param name="xLength">Width</param>
     /// <param name="yLength">Height</param>
 
-    public static void CopyGrid(Cell[,] source, Cell[,] destination, int xLength, int yLength)
+    public static void CopyGrid(CaveMask[,] source, CaveMask[,] destination, int xLength, int yLength)
     {
         for (int column = 0; column < xLength; ++column)
         {
             for (int row = 0; row < yLength; ++row)
             {
-                destination[column, row].Type = source[column, row].Type;
+                destination[column, row].active = source[column, row].active;
             }
         }
     }
@@ -39,8 +39,8 @@ public static class CaveUtilities
     /// </summary>
     /// <param name="a">Tile 1</param>
     /// <param name="b">Tile 2</param>
-    public static int TileDistance(Cell a, Cell b)
+    public static int TileDistance(CaveMask a, CaveMask b)
     {
-        return (int)Mathf.Pow(a.x - b.x, 2) + (int)Mathf.Pow(a.y - b.y, 2);
+        return (int)Mathf.Pow(a.x - b.x, 2) + (int)Mathf.Pow(a.z - b.z, 2);
     }
 }

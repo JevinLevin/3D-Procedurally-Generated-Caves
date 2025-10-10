@@ -10,9 +10,9 @@ using UnityEngine.Serialization;
 public class GenerationSettingsScriptableObject : ScriptableObject
 {
     
-    [Header("General")]
-    public int mapWidth = 50;
-    public int mapHeight = 50;
+    [FormerlySerializedAs("mapWidth")] [Header("General")]
+    public Vector2Int mapSize = new(50, 50);
+    public int maxHeight = 20;
     public int roomThreshold = 6;
     
     [Header("Random Walker")]
