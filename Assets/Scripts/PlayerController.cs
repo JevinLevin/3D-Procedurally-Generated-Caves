@@ -10,6 +10,7 @@ public class PlayerController : MonoBehaviour
     [Header("Movement")]
     public float moveSpeed = 5f;
     public float jumpForce = 1.5f;
+    public float gravity = 20f;
     
     [Header("Camera")]
     public float sensitivity = 5.0f;
@@ -58,11 +59,11 @@ public class PlayerController : MonoBehaviour
         
 
         // Jump
-        if (Input.GetKeyDown(KeyCode.Space) && controller.isGrounded)
+        if (Input.GetKey(KeyCode.Space) && controller.isGrounded)
             velocity.y = jumpForce;
         
         // Apply gravity
-        velocity.y += Physics.gravity.y * Time.deltaTime;
+        velocity.y += gravity * Time.deltaTime;
         
         Vector3 frameVelocity = frameInput * moveSpeed + new Vector3(0, velocity.y, 0);
         
