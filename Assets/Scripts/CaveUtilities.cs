@@ -22,17 +22,6 @@ public static class CaveUtilities
         }
     }
     
-    public static void CopyMask(CaveMask[,] source, CaveCell[,,] destination, int height, int xLength, int yLength)
-    {
-        for (int column = 0; column < xLength; ++column)
-        {
-            for (int row = 0; row < yLength; ++row)
-            {
-                destination[column, height, row].Tile = source[column, row].active ? CaveCell.Tiles.Tile : CaveCell.Tiles.Empty;
-            }
-        }
-    }
-    
     /// <summary>
     ///  Check if coordinates are within grid bounds
     /// </summary>
