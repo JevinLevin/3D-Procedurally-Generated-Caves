@@ -28,6 +28,7 @@ public class CaveGenerator : MonoBehaviour
 
     private List<Walker> walkers;
     private int tileCount;
+    private Room mainRoom;
     private List<Room> allRooms;
     
     [SerializeField] [HideInInspector] private List<GameObject> floor = new();
@@ -89,7 +90,7 @@ public class CaveGenerator : MonoBehaviour
         CreateRooms();
         PolishRoom();
         
-        AddHeight();
+        CreateFloor();
         
         // Spawn environment tiles
         GenerateEnvironment();
@@ -280,6 +281,7 @@ public class CaveGenerator : MonoBehaviour
         }
 
         allRooms = newRooms;
+        mainRoom = allRooms[0];
     }
 
     /// <summary>
@@ -555,8 +557,21 @@ public class CaveGenerator : MonoBehaviour
 
     #region Height
 
-    private void AddHeight()
+    private void CreateFloor()
     {
+        CaveUtilities.CopyMask(levelMask, levelGrid, 0, xWidth, zWidth);
+        CaveUtilities.CopyMask(levelMask, levelGrid, settings.maxHeight-1, xWidth, zWidth);
+        
+        AddHeight(levelGrid.);
+    }
+    
+    private void AddHeight(int height)
+    {
+        int[,] distance = new int[xWidth, zWidth];
+        Queue<Vector2Int> queue = new();
+        
+        // Edge tiles get the minimum distance of 0
+        foreach(ce)
         
     }
 
@@ -722,13 +737,16 @@ public class CaveGenerator : MonoBehaviour
     {
         for(int x = 0; x < xWidth; x++)
         {
-            for(int y = 0; y < zWidth; y++)
+            for (int y = 0; y < yWidth; y++)
             {
-                CaveMask current = levelMask[x,y];
-                
-                if (current.active)
+                for(int z = 0; z < zWidth; z++)
                 {
-                    floor.Add(Instantiate(floorCube, new Vector3(current.x - CaveGenerator.xWidthHalf, 0, current.z - CaveGenerator.zWidthHalf), Quaternion.identity, transform));
+                    CaveCell current = levelGrid[x,y,z];
+                
+                    if (current.Tile == CaveCell.Tiles.Tile)
+                    {
+                        floor.Add(Instantiate(floorCube, current.WorldPosition, Quaternion.identity, transform));
+                    }
                 }
             }
         }
@@ -742,6 +760,7 @@ public class CaveCell
     public enum Tiles
     {
         Empty,
+        Tile,
         Environment,
     }
 
@@ -750,7 +769,7 @@ public class CaveCell
 
     public Tiles Tile { get; set; }
     
-    public Vector3 WorldPosition => new Vector3(x - CaveGenerator.xWidthHalf, y - CaveGenerator.yWidthHalf, z - CaveGenerator.zWidthHalf);
+    public Vector3 WorldPosition => new Vector3(x - CaveGenerator.xWidthHalf, y, z - CaveGenerator.zWidthHalf);
 
     public CaveCell()
     {
