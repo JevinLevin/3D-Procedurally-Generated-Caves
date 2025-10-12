@@ -10,6 +10,8 @@ public class CaveGenerator : MonoBehaviour
 
     [Header("Components")] [Header("Prefabs")] 
     [SerializeField] private GameObject floorCube;
+    [SerializeField] private GameObject tilePrefab;
+    [SerializeField] private List<TileScriptableObject> tiles;
 
     [Header("Seed")]
     [SerializeField] private int seed;
@@ -830,8 +832,6 @@ public class CaveGenerator : MonoBehaviour
     /// </summary>
     private void GenerateEnvironment()
     {
-        // Randomly place rocks etc
-        
         // Create noise map based on size and scale
         float[,] noiseMap = new float[xWidth, zWidth];
         float noiseValue = 0.0f;
@@ -864,8 +864,18 @@ public class CaveGenerator : MonoBehaviour
                 
 
                 noiseValue = noiseMap[i, j];
-                //if (noiseValue < settings.environmentPerlin)
-                //    current.Tile = CaveMask.Tiles.Environment;
+                if (noiseValue < settings.environmentPerlin)
+                {
+                    // Get lowest tile on x and z axis
+                    for (int h = 0; h < settings.caveSize.y; h++)
+                    {
+                        if (levelGrid[i, h, j].Tile == CaveCell.Tiles.Tile)
+                            continue;
+                        
+                        levelGrid[i, h, j].Tile = CaveCell.Tiles.Environment;
+                        break;
+                    }
+                }
             }   
         }
     }
@@ -888,9 +898,37 @@ public class CaveGenerator : MonoBehaviour
                     {
                         floor.Add(Instantiate(floorCube, current.WorldPosition, Quaternion.identity, transform));
                     }
+                    else if (current.Tile == CaveCell.Tiles.Environment)
+                    {
+                        TileScriptableObject tile = RandomWeightedTile();
+                        GameObject newTile = Instantiate(tilePrefab, current.WorldPosition, Quaternion.identity, transform);
+                        newTile.GetComponent<CaveTile>().Setup(tile);
+                        floor.Add(newTile);
+                        
+                    }
                 }
             }
         }
+    }
+
+    private TileScriptableObject RandomWeightedTile()
+    {
+        int totalWeight = 0;
+        foreach (TileScriptableObject tile in tiles)
+        {
+            totalWeight += tile.weight;
+        }
+        int randomValue = Random.Range(0, totalWeight);
+        foreach (TileScriptableObject tile in tiles)
+        {
+            if (randomValue < tile.weight)
+            {
+                return tile;
+            }
+            randomValue -= tile.weight;
+        }
+        // Failsafe
+        return tiles[0];
     }
     
         

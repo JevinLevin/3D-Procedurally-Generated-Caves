@@ -10,7 +10,7 @@ using UnityEngine.Serialization;
 public class GenerationSettingsScriptableObject : ScriptableObject
 {
     
-    [FormerlySerializedAs("mapWidth")] [Header("General")]
+    [Header("General")]
     public Vector3Int caveSize = new(50, 25, 50);
     public int floorHeight = 5;
     public int roomThreshold = 6;
