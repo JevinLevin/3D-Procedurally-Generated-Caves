@@ -25,5 +25,5 @@ MonoBehaviour:
   floorPerlinAmplitude: 1.5
   ceilingPerlinScale: 0.5
   ceilingPerlinAmplitude: 2.5
-  environmentPerlinScale: 0.2
-  environmentPerlin: 1
+  environmentPerlinScale: 0.5
+  environmentPerlin: 0.3

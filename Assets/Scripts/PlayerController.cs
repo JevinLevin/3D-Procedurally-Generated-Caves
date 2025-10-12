@@ -11,6 +11,7 @@ public class PlayerController : MonoBehaviour
     public float moveSpeed = 5f;
     public float jumpForce = 1.5f;
     public float gravity = 20f;
+    public float sprintMultiplier = 1.5f;
     
     [Header("Camera")]
     public float sensitivity = 5.0f;
@@ -38,9 +39,9 @@ public class PlayerController : MonoBehaviour
         
         // Make player face camera horizontal direction
         transform.rotation = Quaternion.Euler(0, cameraRotation.x, 0);
-        
-        
-        
+
+
+        #region  Horizontal
         // https://docs.unity3d.com/ScriptReference/CharacterController.Move
         Vector3 frameInput = new Vector3(Input.GetAxis("Horizontal"), 0, Input.GetAxis("Vertical"));
         if(frameInput.magnitude > 1)
@@ -59,18 +60,28 @@ public class PlayerController : MonoBehaviour
         frameInput = forwardInput + rightInput;
         
         
+        Vector3 frameSpeed = frameInput * moveSpeed;
+        
+        // Sprint
+        if (Input.GetKey(KeyCode.LeftShift))
+            frameSpeed *= sprintMultiplier;
+        #endregion
+
+
+        #region  Vertical
         if (controller.isGrounded)
             velocity.y = 0;
-        
-
         // Jump
         if (Input.GetKey(KeyCode.Space) && controller.isGrounded)
             velocity.y = jumpForce;
         
         // Apply gravity
         velocity.y += gravity * Time.deltaTime;
+
+        Vector3 frameVelocity = frameSpeed + new Vector3(0, velocity.y, 0);
+        #endregion
         
-        Vector3 frameVelocity = frameInput * moveSpeed + new Vector3(0, velocity.y, 0);
+        
         
         controller.Move(frameVelocity * Time.deltaTime);
         
