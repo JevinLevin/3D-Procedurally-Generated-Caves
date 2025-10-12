@@ -18,7 +18,12 @@ public class PlayerController : MonoBehaviour
 
     private Vector3 velocity;
     Vector2 cameraRotation;
-    
+
+    private void Awake()
+    {
+        Cursor.lockState = CursorLockMode.Locked;
+    }
+
     private void Update()
     {
         // Mouse 

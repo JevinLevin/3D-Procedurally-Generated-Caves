@@ -11,8 +11,8 @@ public class GenerationSettingsScriptableObject : ScriptableObject
 {
     
     [FormerlySerializedAs("mapWidth")] [Header("General")]
-    public Vector2Int mapSize = new(50, 50);
-    public int maxHeight = 20;
+    public Vector3Int caveSize = new(50, 25, 50);
+    public int floorHeight = 5;
     public int roomThreshold = 6;
     
     [Header("Random Walker")]
@@ -27,7 +27,13 @@ public class GenerationSettingsScriptableObject : ScriptableObject
     public int cAIterations = 3;
 
     [Header("Perlin Noise")] 
-    public float environmentPerlinScale = 0.5f;
-    public float environmentPerlin = 0.25f;
+    [Range(0.01f, 1.0f)] public float floorPerlinScale = 0.2f;
+    [Range(0.01f, 5.0f)] public float floorPerlinAmplitude = 1.5f;
+    [Range(0.01f, 1.0f)] public float ceilingPerlinScale = 0.5f;
+    [Range(0.01f, 5.0f)] public float ceilingPerlinAmplitude = 2.5f;
+    
+    [Header("Environment")]
+    [Range(0.01f, 1.0f)] public float environmentPerlinScale = 0.5f;
+    [Range(0.01f, 1.0f)] public float environmentPerlin = 0.25f;
     
 }

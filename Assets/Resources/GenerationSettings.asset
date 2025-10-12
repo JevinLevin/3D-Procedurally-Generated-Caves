@@ -12,14 +12,18 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b32f3f761d5223c4888ecead05d1b083, type: 3}
   m_Name: GenerationSettings
   m_EditorClassIdentifier: Assembly-CSharp::GenerationSettingsScriptableObject
-  mapSize: {x: 50, y: 50}
-  maxHeight: 20
+  caveSize: {x: 75, y: 15, z: 75}
+  floorHeight: 4
   roomThreshold: 6
   maximumWalkers: 10
-  redirectChance: 0.05
+  redirectChance: 0.2
   removeChance: 0.5
   createChance: 0.75
-  fillPercentage: 0.2
+  fillPercentage: 0.3
   cAIterations: 3
-  environmentPerlinScale: 0.5
-  environmentPerlin: 0.275
+  floorPerlinScale: 0.2
+  floorPerlinAmplitude: 1.5
+  ceilingPerlinScale: 0.5
+  ceilingPerlinAmplitude: 2.5
+  environmentPerlinScale: 0.2
+  environmentPerlin: 1

@@ -15,7 +15,11 @@ public class CaveGenerator : MonoBehaviour
     [SerializeField] private int seed;
     [SerializeField] public bool randomSeed;
 
-
+    private void Update()
+    {
+        if(Input.GetKeyDown(KeyCode.G))
+            FullGenerate();
+    }
 
     public CaveCell[,,] levelGrid;
     public CaveMask[,] levelMask;
@@ -92,6 +96,8 @@ public class CaveGenerator : MonoBehaviour
         
         CreateFloor();
         
+        CreateWalls();
+        
         // Spawn environment tiles
         GenerateEnvironment();
         
@@ -125,8 +131,8 @@ public class CaveGenerator : MonoBehaviour
         zWidth = 0;
         
         allRooms = new List<Room>();
-        levelGrid = new CaveCell[settings.mapSize.x, settings.maxHeight, settings.mapSize.y];
-        levelMask = new CaveMask[settings.mapSize.x, settings.mapSize.y];
+        levelGrid = new CaveCell[settings.caveSize.x, settings.caveSize.y, settings.caveSize.z];
+        levelMask = new CaveMask[settings.caveSize.x, settings.caveSize.z];
         
     }
     
@@ -560,19 +566,154 @@ public class CaveGenerator : MonoBehaviour
     private void CreateFloor()
     {
         CaveUtilities.CopyMask(levelMask, levelGrid, 0, xWidth, zWidth);
-        CaveUtilities.CopyMask(levelMask, levelGrid, settings.maxHeight-1, xWidth, zWidth);
+        CaveUtilities.CopyMask(levelMask, levelGrid, settings.caveSize.y-1, xWidth, zWidth);
         
-        AddHeight(levelGrid.);
+        // Use distance field to determine height of each tile
+        int[,] distanceField = CalculateInvertedDistanceField(settings.floorHeight);
+        AddHeight(0, 1, distanceField, settings.floorPerlinScale, settings.floorPerlinAmplitude);
+        AddHeight(settings.caveSize.y-1, -1, distanceField, settings.ceilingPerlinScale, settings.ceilingPerlinAmplitude);
+    }
+
+    private void AddHeight(int height, int direction, int[,] distanceField, float perlinScale, float perlinAmplitude)
+    {
+        // Adjust height of grid at input height
+        for (int x = 0; x < xWidth; x++)
+        {
+            for (int z = 0; z < zWidth; z++)
+            {
+                CaveMask current = levelMask[x,z];
+                
+                if(!current.active)
+                    continue;
+
+                int distance = distanceField[x, z];
+                
+                int noiseOffset = GenerateNoiseOffset(x, z, perlinScale, perlinAmplitude);
+                
+                int newHeight =  height + distance * direction + noiseOffset;
+                newHeight = Mathf.Clamp(newHeight, 0, settings.caveSize.y - 1);
+
+                int start = height;
+                int end = newHeight;
+                
+                for (int h = start; h != end; h += direction)
+                {
+                    levelGrid[x, h, z].Tile = CaveCell.Tiles.Tile;
+                }
+            }   
+        }
     }
     
-    private void AddHeight(int height)
+    private int GenerateNoiseOffset(int x, int z, float perlinScale, float perlinAmplitude)
+    {
+        float offsetX = (seed % 10000) * 0.1f;
+        float offsetZ = (seed % 5000) * 0.1f;
+        
+        float noiseValue = Mathf.PerlinNoise(
+            x * perlinScale + offsetX,
+            z * perlinScale + offsetZ * 0.5f
+        );
+        
+        return Mathf.RoundToInt((noiseValue - 0.5f) * 2f * perlinAmplitude);
+    }
+    
+    private int[,] CalculateDistanceField(int clamp)
     {
         int[,] distance = new int[xWidth, zWidth];
         Queue<Vector2Int> queue = new();
         
-        // Edge tiles get the minimum distance of 0
-        foreach(ce)
+        // Edge tiles get the minimum distance of 1
+        foreach(CaveMask mask in mainRoom.edgeTiles)
+        {
+            distance[mask.x, mask.z] = 1;
+            queue.Enqueue(new Vector2Int(mask.x, mask.z));
+        }
         
+        // Flood fill to set distance from edge for each tile
+        while (queue.Count > 0)
+        {
+            Vector2Int current = queue.Dequeue();
+            int currentDistance = distance[current.x, current.y];
+            Vector2Int[] searchOrder = { Vector2Int.right, Vector2Int.left, Vector2Int.up, Vector2Int.down };
+
+            // Loop through all cardinal neighbours
+            foreach (Vector2Int dir in searchOrder)
+            {
+                Vector2Int neighbor = current + dir;
+
+                // Make sure its in the mask
+                if (!CaveUtilities.IsInGrid(neighbor.x, neighbor.y, xWidth, zWidth)) continue;
+                if (!levelMask[neighbor.x, neighbor.y].active) continue;
+
+                // If the neighbour is unset or distance is shorter, update it
+                if (distance[neighbor.x, neighbor.y] == 0 || distance[neighbor.x, neighbor.y] > currentDistance + 1)
+                {
+                    distance[neighbor.x, neighbor.y] = Mathf.Clamp(currentDistance + 1,0,clamp);
+                    queue.Enqueue(neighbor);
+                }
+            }
+        }
+
+        return distance;
+
+    }
+
+    private int[,] CalculateInvertedDistanceField(int clamp)
+    {
+        int[,] distanceField = CalculateDistanceField(clamp);
+        int maxDistance = 0;
+
+        for (int x = 0; x < xWidth; x++)
+        {
+            for (int z = 0; z < zWidth; z++)
+            {
+                if (distanceField[x, z] > maxDistance)
+                    maxDistance = distanceField[x, z];
+            }
+        }
+
+        for (int x = 0; x < xWidth; x++)
+        {
+            for (int z = 0; z < zWidth; z++)
+            {
+                if (distanceField[x, z] > 0)
+                    distanceField[x, z] = (maxDistance + 1) - distanceField[x, z];
+            }
+        }
+        return distanceField;
+    }
+
+    #endregion
+
+    #region Walls
+
+    private void CreateWalls()
+    {
+        HashSet<Vector2Int> wallMask = new();
+        // Loop through edge tiles and add outer tiles to set
+        foreach (CaveMask mask in mainRoom.edgeTiles)
+        {
+            Vector2Int[] searchOrder = { Vector2Int.right, Vector2Int.left, Vector2Int.up, Vector2Int.down };
+
+            // Loop through all cardinal neighbours
+            foreach (Vector2Int dir in searchOrder)
+            {
+                CaveMask neighbour = levelMask[mask.x + dir.x, mask.z + dir.y];
+                if(neighbour.active)
+                    continue;
+                
+                wallMask.Add(neighbour.IntPosition);
+            }
+        }
+        
+        // Set wall tiles in grid
+        foreach (Vector2Int wall in wallMask)
+        {
+            for (int y = 0; y < settings.caveSize.y; y++)
+            {
+                levelGrid[wall.x,y,wall.y].Tile = CaveCell.Tiles.Tile;
+            }
+        }
     }
 
     #endregion
@@ -823,6 +964,7 @@ public struct CaveMask
     public bool active;
 
     public int x,z;
+    public Vector2Int IntPosition => new Vector2Int(x, z);
 
     public void Toggle() => active = !active;
     public void Disable() => active = false;
