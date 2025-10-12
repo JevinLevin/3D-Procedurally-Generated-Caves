@@ -118,6 +118,10 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: -7511558181221131132, guid: 0aeeb026ddf5bfe4fbb0cae189e80df4, type: 3}
+      propertyPath: m_CastShadows
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 919132149155446097, guid: 0aeeb026ddf5bfe4fbb0cae189e80df4, type: 3}
       propertyPath: m_Name
       value: SM_Copper_Ore_01_a

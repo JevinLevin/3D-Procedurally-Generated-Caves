@@ -55,7 +55,10 @@ public class CaveGenerator : MonoBehaviour
         yWidth = levelGrid.GetLength(1);
         zWidth = levelGrid.GetLength(2);
     }
-    
+    /// <summary>
+    /// Initialises the mask used for generation
+    /// </summary>
+    /// <param name="grid">Holds cave data</param>
     private void InitGrid(CaveMask[,] grid)
     {
         // Set blank tiles
@@ -96,8 +99,10 @@ public class CaveGenerator : MonoBehaviour
         CreateRooms();
         PolishRoom();
         
+        // Create the floor and ceiling of the cave
         CreateFloor();
         
+        // Etruct walls around the main room
         CreateWalls();
         
         // Spawn environment tiles
@@ -262,6 +267,8 @@ public class CaveGenerator : MonoBehaviour
     #region Room Creation
     /// <summary>
     /// Finds all rooms in the grid and connects them if necessary
+    /// https://www.youtube.com/watch?v=eVb9kQXvEZM&list=PLFt_AvWsXl0eZgMK_DT5_biRkWXftAOf9&index=6
+    /// Thanks to Sebastian Lague for the tutorial
     /// </summary>
     public void CreateRooms()
     {
@@ -565,20 +572,35 @@ public class CaveGenerator : MonoBehaviour
 
     #region Height
 
+    /// <summary>
+    /// Creates the floor and ceiling of the cave using a distance field and perlin noise
+    /// </summary>
     private void CreateFloor()
     {
+        // Copy mask to bottom and top of grid
         CaveUtilities.CopyMask(levelMask, levelGrid, 0, xWidth, zWidth);
         CaveUtilities.CopyMask(levelMask, levelGrid, settings.caveSize.y-1, xWidth, zWidth);
         
         // Use distance field to determine height of each tile
-        int[,] distanceField = CalculateInvertedDistanceField(settings.floorHeight);
-        AddHeight(0, 1, distanceField, settings.floorPerlinScale, settings.floorPerlinAmplitude);
-        AddHeight(settings.caveSize.y-1, -1, distanceField, settings.ceilingPerlinScale, settings.ceilingPerlinAmplitude);
+        int[,] invertedDistanceField = CalculateInvertedDistanceField(settings.floorHeight);
+        
+        AddHeight(0, 1, invertedDistanceField, settings.floorPerlinScale, settings.floorPerlinAmplitude);
+        AddHeight(settings.caveSize.y-1, -1, invertedDistanceField, settings.ceilingPerlinScale, settings.ceilingPerlinAmplitude);
     }
 
-    private void AddHeight(int height, int direction, int[,] distanceField, float perlinScale, float perlinAmplitude)
+    /// <summary>
+    /// Adjusts the height of a layer in the grid based on a distance field and perlin noise
+    /// </summary>
+    /// <param name="height">Layer height</param>
+    /// <param name="direction">Normalised direction</param>
+    /// <param name="invertedDistanceField">Grid of each tile's inverted distance from wall</param>
+    /// <param name="perlinScale">Scale of perlin noise calculations</param>
+    /// <param name="perlinAmplitude">Amplitude of perlin noise calculations</param>
+
+
+    private void AddHeight(int height, int direction, int[,] invertedDistanceField, float perlinScale, float perlinAmplitude)
     {
-        // Adjust height of grid at input height
+        
         for (int x = 0; x < xWidth; x++)
         {
             for (int z = 0; z < zWidth; z++)
@@ -588,7 +610,7 @@ public class CaveGenerator : MonoBehaviour
                 if(!current.active)
                     continue;
 
-                int distance = distanceField[x, z];
+                int distance = invertedDistanceField[x, z];
                 
                 int noiseOffset = GenerateNoiseOffset(x, z, perlinScale, perlinAmplitude);
                 
@@ -598,6 +620,7 @@ public class CaveGenerator : MonoBehaviour
                 int start = height;
                 int end = newHeight;
                 
+                // From start to end in the correct direction
                 for (int h = start; h != end; h += direction)
                 {
                     levelGrid[x, h, z].Tile = CaveCell.Tiles.Tile;
@@ -606,19 +629,42 @@ public class CaveGenerator : MonoBehaviour
         }
     }
     
+    /// <summary>
+    /// Return vertical offset based on perlin noise
+    /// </summary>
+    /// <param name="x">Horizontal position</param>
+    /// <param name="z">Vertical position</param>
+    /// <param name="perlinScale">Smoothness of offsets</param>
+    /// <param name="perlinAmplitude">Maximum height of offset</param>
+
     private int GenerateNoiseOffset(int x, int z, float perlinScale, float perlinAmplitude)
     {
+        // Offset perlin to get different results each time
         float offsetX = (seed % 10000) * 0.1f;
         float offsetZ = (seed % 5000) * 0.1f;
         
+        // Generate random value with scale
+        // Large scale = smooth changes
+        // Smaller scale = jagged changes
         float noiseValue = Mathf.PerlinNoise(
             x * perlinScale + offsetX,
             z * perlinScale + offsetZ * 0.5f
         );
         
-        return Mathf.RoundToInt((noiseValue - 0.5f) * 2f * perlinAmplitude);
+        
+        return Mathf.RoundToInt(
+                                // Shift range from [0,1] to [-0.5,0.5]
+                                (noiseValue - 0.5f) 
+                                // Scale range to [-1,1]
+                                * 2f 
+                                // Scale by additional amplitude
+                                * perlinAmplitude);
     }
     
+    /// <summary>
+    /// Calculate distance of each tile from edge
+    /// </summary>
+    /// <param name="clamp">Limit distance to amount</param>
     private int[,] CalculateDistanceField(int clamp)
     {
         int[,] distance = new int[xWidth, zWidth];
@@ -643,7 +689,7 @@ public class CaveGenerator : MonoBehaviour
             {
                 Vector2Int neighbor = current + dir;
 
-                // Make sure its in the mask
+                // Make sure it's in the mask
                 if (!CaveUtilities.IsInGrid(neighbor.x, neighbor.y, xWidth, zWidth)) continue;
                 if (!levelMask[neighbor.x, neighbor.y].active) continue;
 
@@ -659,7 +705,10 @@ public class CaveGenerator : MonoBehaviour
         return distance;
 
     }
-
+    /// <summary>
+    /// Calculate distance of each tile from edge, but invert the values so the furthest tile has the highest value
+    /// </summary>
+    /// <param name="clamp">Limit distance to amount</param>
     private int[,] CalculateInvertedDistanceField(int clamp)
     {
         int[,] distanceField = CalculateDistanceField(clamp);
@@ -689,10 +738,13 @@ public class CaveGenerator : MonoBehaviour
 
     #region Walls
 
+    /// <summary>
+    /// Extrude tiles around edge tiles up to ceiling
+    /// </summary>
     private void CreateWalls()
     {
         HashSet<Vector2Int> wallMask = new();
-        // Loop through edge tiles and add outer tiles to set
+        // Loop through edge tiles and add outer tiles to hashset
         foreach (CaveMask mask in mainRoom.edgeTiles)
         {
             Vector2Int[] searchOrder = { Vector2Int.right, Vector2Int.left, Vector2Int.up, Vector2Int.down };
