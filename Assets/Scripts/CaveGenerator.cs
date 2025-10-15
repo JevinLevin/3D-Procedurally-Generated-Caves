@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using EditorAttributes;
 using UnityEngine;
@@ -16,6 +17,8 @@ public class CaveGenerator : MonoBehaviour
     [Header("Seed")]
     [SerializeField] private int seed;
     [SerializeField] public bool randomSeed;
+
+    public float stepTime = 0.0f;
 
     private void Update()
     {
@@ -66,15 +69,16 @@ public class CaveGenerator : MonoBehaviour
             for (int j = 0; j < grid.GetLength(1); j++)
                 grid[i, j] = new CaveMask(i,j);
     }
-    
-    
-    
+
+
+
 
     /// <summary>
     /// Completes the full process of generating the cave
     /// </summary>
-    [Button]
-    private void FullGenerate()
+
+    private Coroutine currentProcess;
+    public IEnumerator FullGenerate()
     {
         // Set seed
         if (randomSeed)
@@ -90,6 +94,9 @@ public class CaveGenerator : MonoBehaviour
         
         // Generate initial shape
         WalkerStart();
+        while(currentProcess != null)
+            yield return null;
+        
         AddCellularAutomaton(settings.cAIterations);
         
         // Repeat process twice to ensure no inaccessible walls are created when polishing
@@ -102,7 +109,7 @@ public class CaveGenerator : MonoBehaviour
         // Create the floor and ceiling of the cave
         CreateFloor();
         
-        // Etruct walls around the main room
+        // Erect walls around the main room
         CreateWalls();
         
         // Spawn environment tiles
@@ -110,12 +117,14 @@ public class CaveGenerator : MonoBehaviour
         
         // Instantiate all gameobjects
         SetTiles();
+
+        yield return null;
     }
     
     /// <summary>
     /// Remove all game objects from the room
     /// </summary>
-    private void ClearRoom()
+    public void ClearRoom()
     {
         tileCount = 0;
         foreach (GameObject floorTile in floor)
@@ -131,7 +140,7 @@ public class CaveGenerator : MonoBehaviour
     /// <summary>
     /// CLear all data used in generation
     /// </summary>
-    private void ResetRoom()
+    public void ResetRoom()
     {
         xWidth = 0;
         yWidth = 0;
@@ -161,14 +170,13 @@ public class CaveGenerator : MonoBehaviour
 
         tileCount++;
 
-        WalkerGenerate();
-        
+        currentProcess = StartCoroutine(WalkerGenerate());
     }
     
     /// <summary>
     /// Runs the main walker generation loop
     /// </summary>
-    private void WalkerGenerate()
+    private IEnumerator WalkerGenerate()
     {
         while ((float)tileCount / levelMask.Length < settings.fillPercentage)
         {
@@ -188,6 +196,14 @@ public class CaveGenerator : MonoBehaviour
             WalkerManager.ChanceToRedirect(walkers);
             WalkerManager.ChanceToCreate(walkers, settings.maximumWalkers, settings.redirectChance, settings.removeChance, settings.createChance);
             WalkerManager.UpdatePosition(walkers, xWidth, zWidth);
+            
+            if (stepTime > 0.0f)
+            {
+                CaveUtilities.CopyMask(levelMask, levelGrid, 0, xWidth, zWidth);
+                ClearRoom();
+                SetTiles();
+                yield return new WaitForSeconds(stepTime);
+            }
         }
     }
     
@@ -1149,5 +1165,18 @@ public class Room : IComparable<Room>
         return other.roomSize.CompareTo(roomSize);
     }
 
+}
+
+[Serializable]
+public class EditorFunctions
+{
+    public CaveGenerator caveGenerator;
+    public float stepTime;
+    [Button]
+    private void GenerateCave()
+    {
+        caveGenerator.stepTime = stepTime;
+        caveGenerator.StartCoroutine(nameof(caveGenerator.FullGenerate));
+    }
 }
 
