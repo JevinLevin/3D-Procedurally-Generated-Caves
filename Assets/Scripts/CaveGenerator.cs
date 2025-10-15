@@ -18,12 +18,12 @@ public class CaveGenerator : MonoBehaviour
     [SerializeField] private int seed;
     [SerializeField] public bool randomSeed;
 
-    public float stepTime = 0.0f;
+    [HideInInspector] public float stepTime = 0.0f;
 
     private void Update()
     {
         if(Input.GetKeyDown(KeyCode.G))
-            FullGenerate();
+            StartCoroutine(FullGenerate());
     }
 
     public CaveCell[,,] levelGrid;
@@ -41,6 +41,7 @@ public class CaveGenerator : MonoBehaviour
     private List<Room> allRooms;
     
     [SerializeField] [HideInInspector] private List<GameObject> floor = new();
+    [SerializeField] private GameObject meshObject;
     
     /// <summary>
     /// Initialises the grid used for generation
@@ -94,31 +95,51 @@ public class CaveGenerator : MonoBehaviour
         
         // Generate initial shape
         WalkerStart();
-        while(currentProcess != null)
+        while (currentProcess != null)
             yield return null;
         
-        AddCellularAutomaton(settings.cAIterations);
+        currentProcess = StartCoroutine(AddCellularAutomaton(settings.cAIterations, false));
+        while (currentProcess != null)
+            yield return null;
         
         // Repeat process twice to ensure no inaccessible walls are created when polishing
         // Testing found this combination produced the best results
         CreateRooms();
-        PolishRoom();
+        while (currentProcess != null)
+            yield return null;
+        currentProcess = StartCoroutine(PolishRoom());
+        while (currentProcess != null)
+            yield return null;
         CreateRooms();
-        PolishRoom();
+        while (currentProcess != null)
+            yield return null;
+        currentProcess = StartCoroutine(PolishRoom());
+
         
         // Create the floor and ceiling of the cave
-        CreateFloor();
+        currentProcess = StartCoroutine(CreateFloor());
+        while (currentProcess != null)
+            yield return null;
         
         // Erect walls around the main room
-        CreateWalls();
+        currentProcess = StartCoroutine(CreateWalls());
         
         // Spawn environment tiles
-        GenerateEnvironment();
+        currentProcess = StartCoroutine(GenerateEnvironment());
+
+        if (stepTime > 0)
+        {
+            // If its been visualising the process, quickly clear and redraw the final result
+            ClearRoom();
+            foreach (CaveCell tile in levelGrid)
+            {
+                tile.instantiated = false;
+            }
+        }
         
         // Instantiate all gameobjects
+        SetMesh(true);
         SetTiles();
-
-        yield return null;
     }
     
     /// <summary>
@@ -126,7 +147,6 @@ public class CaveGenerator : MonoBehaviour
     /// </summary>
     public void ClearRoom()
     {
-        tileCount = 0;
         foreach (GameObject floorTile in floor)
         {
             if(Application.isPlaying)
@@ -135,6 +155,14 @@ public class CaveGenerator : MonoBehaviour
                 DestroyImmediate(floorTile);
         }
         floor.Clear();
+        
+        if (meshObject != null)
+        {
+            if(Application.isPlaying)
+                Destroy(meshObject);
+            else
+                DestroyImmediate(meshObject);
+        }
     }
 
     /// <summary>
@@ -145,6 +173,8 @@ public class CaveGenerator : MonoBehaviour
         xWidth = 0;
         yWidth = 0;
         zWidth = 0;
+        
+        tileCount = 0;
         
         allRooms = new List<Room>();
         levelGrid = new CaveCell[settings.caveSize.x, settings.caveSize.y, settings.caveSize.z];
@@ -180,6 +210,7 @@ public class CaveGenerator : MonoBehaviour
     {
         while ((float)tileCount / levelMask.Length < settings.fillPercentage)
         {
+            bool changed = false;
             foreach (Walker walker in walkers)
             {
                 Vector2Int gridPos = walker.IntPosition;
@@ -189,6 +220,7 @@ public class CaveGenerator : MonoBehaviour
                 
                 tileCount++;
                 levelMask[gridPos.x, gridPos.y].active = true;
+                changed = true;
             }
 
             //Walker Methods
@@ -197,14 +229,15 @@ public class CaveGenerator : MonoBehaviour
             WalkerManager.ChanceToCreate(walkers, settings.maximumWalkers, settings.redirectChance, settings.removeChance, settings.createChance);
             WalkerManager.UpdatePosition(walkers, xWidth, zWidth);
             
-            if (stepTime > 0.0f)
+            if (changed && stepTime > 0)
             {
                 CaveUtilities.CopyMask(levelMask, levelGrid, 0, xWidth, zWidth);
                 ClearRoom();
-                SetTiles();
-                yield return new WaitForSeconds(stepTime);
+                SetMesh();
+                yield return new WaitForSecondsRealtime(stepTime);
             }
         }
+        currentProcess = null;
     }
     
     #endregion
@@ -216,7 +249,8 @@ public class CaveGenerator : MonoBehaviour
     /// Applies the specified number of cellular automaton iterations to the grid
     /// </summary>
     /// <param name="iterations">Number of rounds of cellular automaton to run</param>
-    private void AddCellularAutomaton(int iterations)
+    /// <param name="skipStepTime">Forces it to skip animation showing process unless stated otherwise</param> 
+    private IEnumerator AddCellularAutomaton(int iterations, bool skipStepTime = true)
     {
         // Pre-allocate the temporary grid if it doesn't exist or if grid size changed
         if (copyGrid == null || copyGrid.GetLength(0) != xWidth || copyGrid.GetLength(1) != zWidth)
@@ -242,6 +276,7 @@ public class CaveGenerator : MonoBehaviour
                 for (int y = 0; y < zWidth; y++)
                 {
                     int offCount = 0;
+                    bool changed = false;
 
                     for (int dx = -1; dx <= 1; dx++)
                     {
@@ -272,10 +307,28 @@ public class CaveGenerator : MonoBehaviour
                     }
 
                     // Apply automaton rules based on off count
-                    levelMask[x, y].active = offCount <= 4;
+                    if (offCount <= 4 && !copyGrid[x, y].active)
+                    {
+                        levelMask[x, y].active = true;
+                        changed = true;
+                    }
+                    if(offCount >= 5 && copyGrid[x, y].active)
+                    {
+                        levelMask[x, y].active = false;
+                        changed = true;
+                    }
+                    
+                    if (!skipStepTime && changed && stepTime > 0)
+                    {
+                        CaveUtilities.CopyMask(levelMask, levelGrid, 0, xWidth, zWidth);
+                        ClearRoom();
+                        SetMesh();
+                        yield return new WaitForSecondsRealtime(stepTime);
+                    }
                 }
             }
         }
+        currentProcess = null;
     }
     
     #endregion
@@ -308,7 +361,7 @@ public class CaveGenerator : MonoBehaviour
             newRooms[0].isAcessible = true;
 
             // Connect all other rooms
-            ConnectRooms(newRooms);
+            currentProcess = StartCoroutine(ConnectRooms(newRooms));
         }
 
         allRooms = newRooms;
@@ -381,13 +434,15 @@ public class CaveGenerator : MonoBehaviour
         return currentRooms;
     }
 
+    private Coroutine createConnectionCoroutine;
+    private Coroutine drawCircleCoroutine;
     
     /// <summary>
     /// Connect all rooms together, first to the biggest room, then to the closest room
     /// </summary>
     /// <param name="rooms">List of all available rooms</param>
     /// <param name="forceAccessibility">Used during repeated loops to force connection to the closest room </param>
-    private void ConnectRooms(List<Room> rooms, bool forceAccessibility = false)
+    private IEnumerator ConnectRooms(List<Room> rooms, bool forceAccessibility = false)
     {
         // List of rooms NOT connected to main room
         List<Room> roomsA = new();
@@ -462,26 +517,32 @@ public class CaveGenerator : MonoBehaviour
             // During the first loop connect all rooms to their closest
             if (possibleConnection && !forceAccessibility)
             {
-                CreateConnection(bestRoomA, bestRoomB, bestTileA, bestTileB);
+                createConnectionCoroutine = StartCoroutine(CreateConnection(bestRoomA, bestRoomB, bestTileA, bestTileB));
+                while (createConnectionCoroutine != null)
+                    yield return null;
             }
             
         }
+
+        currentProcess = null;
         
         // During the second loop, only connect the closest connection out of all possible rooms
         if (possibleConnection && forceAccessibility)
         {
-            CreateConnection(bestRoomA, bestRoomB, bestTileA, bestTileB);
+            createConnectionCoroutine = StartCoroutine(CreateConnection(bestRoomA, bestRoomB, bestTileA, bestTileB));
+            while (createConnectionCoroutine != null)
+                yield return null;
             // Repeat it until all rooms are connected to main
-            ConnectRooms(rooms, true);
+            currentProcess = StartCoroutine(ConnectRooms(rooms, true));
         }
 
         if (!forceAccessibility)
         {
-            ConnectRooms(rooms, true);
+            currentProcess = StartCoroutine(ConnectRooms(rooms, true));
         }
         
         // After all rooms are connected, apply one round of cellular automata to smoothen connections
-        AddCellularAutomaton(1);
+        StartCoroutine(AddCellularAutomaton(1));
     }
 
     /// <summary>
@@ -492,7 +553,7 @@ public class CaveGenerator : MonoBehaviour
     /// <param name="origin">Where to start drawing the tunnel</param>>
     /// <param name="destination">Where to finish drawing the tunnel</param>>
 
-    private void CreateConnection(Room a, Room b, CaveMask origin, CaveMask destination)
+    private IEnumerator CreateConnection(Room a, Room b, CaveMask origin, CaveMask destination)
     {
         Room.ConnectRooms(a,b);
         
@@ -502,8 +563,13 @@ public class CaveGenerator : MonoBehaviour
 
         foreach (CaveMask tile in line)
         {
-            DrawCircle(tile, 1);
+            //currentProcess = StartCoroutine(DrawCircle(tile, 1));
+            drawCircleCoroutine = StartCoroutine(DrawCircle(tile, 1));
+            while (drawCircleCoroutine != null)
+                yield return null;
         }
+
+        createConnectionCoroutine = null;
 
     }
 
@@ -512,7 +578,7 @@ public class CaveGenerator : MonoBehaviour
     /// </summary>
     /// <param name="tile">Circle origin</param>
     /// <param name="radius">Circle size </param>
-    void DrawCircle(CaveMask tile, int radius)
+    private IEnumerator DrawCircle(CaveMask tile, int radius)
     {
         for (int x = -radius; x <= radius; x++)
         {
@@ -520,10 +586,20 @@ public class CaveGenerator : MonoBehaviour
             {
                 int drawX = tile.x + x;
                 int drawY = tile.z + y;
-                if (CaveUtilities.IsInGrid(drawX, drawY, xWidth, zWidth))
+                if (CaveUtilities.IsInGrid(drawX, drawY, xWidth, zWidth) && !levelMask[drawX, drawY].active)
+                {
                     levelMask[drawX, drawY].active = true;
+                    if (stepTime > 0)
+                    {
+                        CaveUtilities.CopyMask(levelMask, levelGrid, 0, xWidth, zWidth);
+                        ClearRoom();
+                        SetMesh();
+                        yield return new WaitForSecondsRealtime(stepTime * 10);
+                    }
+                }
             }   
         }
+        drawCircleCoroutine = null;
     }
 
     /// <summary>
@@ -588,10 +664,11 @@ public class CaveGenerator : MonoBehaviour
 
     #region Height
 
+    private Coroutine addHeightCoroutine;
     /// <summary>
     /// Creates the floor and ceiling of the cave using a distance field and perlin noise
     /// </summary>
-    private void CreateFloor()
+    private IEnumerator CreateFloor()
     {
         // Copy mask to bottom and top of grid
         CaveUtilities.CopyMask(levelMask, levelGrid, 0, xWidth, zWidth);
@@ -600,8 +677,13 @@ public class CaveGenerator : MonoBehaviour
         // Use distance field to determine height of each tile
         int[,] invertedDistanceField = CalculateInvertedDistanceField(settings.floorHeight);
         
-        AddHeight(0, 1, invertedDistanceField, settings.floorPerlinScale, settings.floorPerlinAmplitude);
-        AddHeight(settings.caveSize.y-1, -1, invertedDistanceField, settings.ceilingPerlinScale, settings.ceilingPerlinAmplitude);
+        addHeightCoroutine = StartCoroutine(AddHeight(0, 1, invertedDistanceField, settings.floorPerlinScale, settings.floorPerlinAmplitude));
+        while (addHeightCoroutine != null)
+            yield return null;
+        addHeightCoroutine = StartCoroutine(AddHeight(settings.caveSize.y-1, -1, invertedDistanceField, settings.ceilingPerlinScale, settings.ceilingPerlinAmplitude));
+        while (addHeightCoroutine != null)
+            yield return null;
+        currentProcess = null;
     }
 
     /// <summary>
@@ -614,7 +696,7 @@ public class CaveGenerator : MonoBehaviour
     /// <param name="perlinAmplitude">Amplitude of perlin noise calculations</param>
 
 
-    private void AddHeight(int height, int direction, int[,] invertedDistanceField, float perlinScale, float perlinAmplitude)
+    private IEnumerator AddHeight(int height, int direction, int[,] invertedDistanceField, float perlinScale, float perlinAmplitude)
     {
         
         for (int x = 0; x < xWidth; x++)
@@ -640,9 +722,17 @@ public class CaveGenerator : MonoBehaviour
                 for (int h = start; h != end; h += direction)
                 {
                     levelGrid[x, h, z].Tile = CaveCell.Tiles.Tile;
+                    
+                    if (stepTime > 0)
+                    {
+                        ClearRoom();
+                        SetMesh();
+                        yield return new WaitForSecondsRealtime(stepTime);
+                    }
                 }
             }   
         }
+        addHeightCoroutine = null;
     }
     
     /// <summary>
@@ -756,7 +846,7 @@ public class CaveGenerator : MonoBehaviour
     /// <summary>
     /// Extrude tiles around edge tiles up to ceiling
     /// </summary>
-    private void CreateWalls()
+    private IEnumerator CreateWalls()
     {
         HashSet<Vector2Int> wallMask = new();
         // Loop through edge tiles and add outer tiles to hashset
@@ -779,8 +869,16 @@ public class CaveGenerator : MonoBehaviour
             for (int y = 0; y < settings.caveSize.y; y++)
             {
                 levelGrid[wall.x,y,wall.y].Tile = CaveCell.Tiles.Tile;
+                
+            }
+            if (stepTime > 0)
+            {
+                ClearRoom();
+                SetMesh();
+                yield return new WaitForSecondsRealtime(stepTime);
             }
         }
+        currentProcess = null;
     }
 
     #endregion
@@ -789,12 +887,12 @@ public class CaveGenerator : MonoBehaviour
     /// <summary>
     /// Custom algorithm that applies finishing touches to the room
     /// </summary>
-    public void PolishRoom()
+    public IEnumerator PolishRoom()
     {
         bool madeEdit = true;
         int failSafe = 0;
 
-        while (madeEdit && failSafe < 10)
+        while (madeEdit && failSafe < 5)
         {
             madeEdit = false;
             failSafe++;
@@ -803,6 +901,7 @@ public class CaveGenerator : MonoBehaviour
             {
                 for (int j = 0; j < zWidth; j++)
                 {
+                    bool editedThisLoop = false;
                     CaveMask current = levelMask[i, j];
                     bool currentActive = current.active;
 
@@ -848,6 +947,7 @@ public class CaveGenerator : MonoBehaviour
                     {
                         current.active = false;
                         madeEdit = true;
+                        editedThisLoop = true;
                     }
 
                     // Wall surrounded by floor
@@ -855,6 +955,7 @@ public class CaveGenerator : MonoBehaviour
                     {
                         current.active = true;
                         madeEdit = true;
+                        editedThisLoop = true;
                     }
 
                     // Check thin horizontal corridors (guarded bounds check)
@@ -884,9 +985,19 @@ public class CaveGenerator : MonoBehaviour
                             madeEdit = true;
                         }
                     }
+                    
+                    if (editedThisLoop && stepTime > 0)
+                    {
+                        CaveUtilities.CopyMask(levelMask, levelGrid, 0, xWidth, zWidth);
+                        ClearRoom();
+                        SetMesh();
+                        yield return new WaitForSecondsRealtime(stepTime);
+                    }
                 }
             }
         }
+        
+        currentProcess = null;
     }
     #endregion
 
@@ -895,7 +1006,7 @@ public class CaveGenerator : MonoBehaviour
     /// <summary>
     /// Generates environment tiles such as rocks based on a perlin noise map
     /// </summary>
-    private void GenerateEnvironment()
+    private IEnumerator GenerateEnvironment()
     {
         // Create noise map based on size and scale
         float[,] noiseMap = new float[xWidth, zWidth];
@@ -938,11 +1049,18 @@ public class CaveGenerator : MonoBehaviour
                             continue;
                         
                         levelGrid[i, h, j].Tile = CaveCell.Tiles.Environment;
+                        
+                        if (stepTime > 0)
+                        {
+                            SetTiles();
+                            yield return new WaitForSecondsRealtime(stepTime * 10); 
+                        }
                         break;
                     }
                 }
             }   
         }
+        currentProcess = null;
     }
     #endregion
     
@@ -963,31 +1081,44 @@ public class CaveGenerator : MonoBehaviour
                     //{
                     //    floor.Add(Instantiate(floorCube, current.WorldPosition, Quaternion.identity, transform));
                     //}
-                    if (current.Tile == CaveCell.Tiles.Environment)
+                    if (!current.instantiated && current.Tile == CaveCell.Tiles.Environment) 
                     {
                         TileScriptableObject tile = RandomWeightedTile();
                         GameObject newTile = Instantiate(tilePrefab, current.WorldPosition, Quaternion.identity, transform);
                         newTile.GetComponent<CaveTile>().Setup(tile);
                         floor.Add(newTile);
-                        
+                        current.instantiated = true;
+
                     }
                 }
             }
         }
+    }
+    
+    /// <summary>
+    /// Create terrain mesh based on voxel data
+    /// </summary>
+    private void SetMesh(bool includeCollider = false)
+    {
         Mesh mesh = BuildVoxelMesh();
         mesh.name = "VoxelMesh";
         // Create mesh gameobject
-        GameObject voxelTerrain = new GameObject("VoxelTerrain", typeof(MeshFilter), typeof(MeshRenderer), typeof(MeshCollider));
+        GameObject voxelTerrain;
+        if(includeCollider)
+            voxelTerrain = new GameObject("VoxelTerrain", typeof(MeshFilter), typeof(MeshRenderer), typeof(MeshCollider));
+        else
+            voxelTerrain = new GameObject("VoxelTerrain", typeof(MeshFilter), typeof(MeshRenderer));
         voxelTerrain.transform.SetParent(transform, false);
         voxelTerrain.GetComponent<MeshFilter>().mesh = mesh;
         voxelTerrain.GetComponent<MeshRenderer>().sharedMaterial = terrainMaterial; // assign a material
-        voxelTerrain.GetComponent<MeshCollider>().sharedMesh = mesh; // assign the mesh to the collider
-        floor.Add(voxelTerrain);
-        
+        if (includeCollider)
+            voxelTerrain.GetComponent<MeshCollider>().sharedMesh = mesh; // assign the mesh to the collider
+        meshObject = voxelTerrain;
     }
 
     /// <summary>
     /// Instantiate all game objects based on the grid data
+    /// https://www.youtube.com/watch?v=jHtqA6j9UMg
     /// </summary>
     /// <returns>Terrain mesh</returns>
     private Mesh BuildVoxelMesh()
@@ -1036,11 +1167,11 @@ public class CaveGenerator : MonoBehaviour
     private void GatherFaceData(int x, int y, int z, List<Vector3> vertices, List<int> triangles, List<Vector3> normals, List<Vector2> uvs)
     {
         // Loop through neighbours/faces
-        foreach (Vector3Int dir in CaveCell.Directions)
+        foreach (Vector3 dir in CaveCell.Directions)
         {
-            int nx = x + dir.x;
-            int ny = y + dir.y;
-            int nz = z + dir.z;
+            int nx = x + (int)dir.x;
+            int ny = y + (int)dir.y;
+            int nz = z + (int)dir.z;
 
             bool hidden = CaveUtilities.IsInGrid(nx, ny, nz, xWidth, yWidth, zWidth) && levelGrid[nx, ny, nz].Tile == CaveCell.Tiles.Tile;
             
@@ -1058,9 +1189,8 @@ public class CaveGenerator : MonoBehaviour
             int vCount = vertices.Count;
 
             // Face center needs to be slightly offset in direction and by half a tile to align properly to edge of tile
-            Vector3 direction = dir;
             Vector3 pos = levelGrid[x, y, z].WorldPosition;
-            Vector3 faceCenter = pos + direction * 0.5f;
+            Vector3 faceCenter = pos + dir * 0.5f;
 
             // Add corners
             vertices.Add(faceCenter + (-right - up) * 0.5f);
@@ -1125,6 +1255,7 @@ public class CaveCell
     }
 
     public int x, y, z;
+    public bool instantiated;
     
 
     public Tiles Tile { get; set; }
@@ -1162,14 +1293,14 @@ public class CaveCell
         Tile = Tiles.Empty;
     }
     
-    public static Vector3Int[] Directions =
+    public static Vector3[] Directions =
     {
-        Vector3Int.forward,
-        Vector3Int.back,
-        Vector3Int.left,
-        Vector3Int.right,
-        Vector3Int.up,
-        Vector3Int.down
+        Vector3.forward,
+        Vector3.back,
+        Vector3.left,
+        Vector3.right,
+        Vector3.up,
+        Vector3.down
     };
 
 }
