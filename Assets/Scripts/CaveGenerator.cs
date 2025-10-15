@@ -10,7 +10,7 @@ public class CaveGenerator : MonoBehaviour
     public GenerationSettingsScriptableObject settings;
 
     [Header("Components")] [Header("Prefabs")] 
-    [SerializeField] private GameObject floorCube;
+    [SerializeField] private Material terrainMaterial;
     [SerializeField] private GameObject tilePrefab;
     [SerializeField] private List<TileScriptableObject> tiles;
 
@@ -698,10 +698,9 @@ public class CaveGenerator : MonoBehaviour
         {
             Vector2Int current = queue.Dequeue();
             int currentDistance = distance[current.x, current.y];
-            Vector2Int[] searchOrder = { Vector2Int.right, Vector2Int.left, Vector2Int.up, Vector2Int.down };
 
             // Loop through all cardinal neighbours
-            foreach (Vector2Int dir in searchOrder)
+            foreach (Vector2Int dir in CaveMask.SearchOrder)
             {
                 Vector2Int neighbor = current + dir;
 
@@ -763,10 +762,8 @@ public class CaveGenerator : MonoBehaviour
         // Loop through edge tiles and add outer tiles to hashset
         foreach (CaveMask mask in mainRoom.edgeTiles)
         {
-            Vector2Int[] searchOrder = { Vector2Int.right, Vector2Int.left, Vector2Int.up, Vector2Int.down };
-
             // Loop through all cardinal neighbours
-            foreach (Vector2Int dir in searchOrder)
+            foreach (Vector2Int dir in CaveMask.SearchOrder)
             {
                 CaveMask neighbour = levelMask[mask.x + dir.x, mask.z + dir.y];
                 if(neighbour.active)
@@ -962,11 +959,11 @@ public class CaveGenerator : MonoBehaviour
                 {
                     CaveCell current = levelGrid[x,y,z];
                 
-                    if (current.Tile == CaveCell.Tiles.Tile)
-                    {
-                        floor.Add(Instantiate(floorCube, current.WorldPosition, Quaternion.identity, transform));
-                    }
-                    else if (current.Tile == CaveCell.Tiles.Environment)
+                    //if (current.Tile == CaveCell.Tiles.Tile)
+                    //{
+                    //    floor.Add(Instantiate(floorCube, current.WorldPosition, Quaternion.identity, transform));
+                    //}
+                    if (current.Tile == CaveCell.Tiles.Environment)
                     {
                         TileScriptableObject tile = RandomWeightedTile();
                         GameObject newTile = Instantiate(tilePrefab, current.WorldPosition, Quaternion.identity, transform);
@@ -977,7 +974,123 @@ public class CaveGenerator : MonoBehaviour
                 }
             }
         }
+        Mesh mesh = BuildVoxelMesh();
+        mesh.name = "VoxelMesh";
+        // Create mesh gameobject
+        GameObject voxelTerrain = new GameObject("VoxelTerrain", typeof(MeshFilter), typeof(MeshRenderer), typeof(MeshCollider));
+        voxelTerrain.transform.SetParent(transform, false);
+        voxelTerrain.GetComponent<MeshFilter>().mesh = mesh;
+        voxelTerrain.GetComponent<MeshRenderer>().sharedMaterial = terrainMaterial; // assign a material
+        voxelTerrain.GetComponent<MeshCollider>().sharedMesh = mesh; // assign the mesh to the collider
+        floor.Add(voxelTerrain);
+        
     }
+
+    /// <summary>
+    /// Instantiate all game objects based on the grid data
+    /// </summary>
+    /// <returns>Terrain mesh</returns>
+    private Mesh BuildVoxelMesh()
+    {
+        // Initialise mesh data
+        List<Vector3> vertices = new();
+        List<int> triangles = new();
+        List<Vector3> normals = new();
+        List<Vector2> uvs = new();
+
+        for (int x = 0; x < xWidth; x++)
+        {
+            for (int y = 0; y < yWidth; y++)
+            {
+                for (int z = 0; z < zWidth; z++)
+                {
+                    if(levelGrid[x,y,z].Tile != CaveCell.Tiles.Tile)
+                        continue;
+                    GatherFaceData(x, y, z, vertices, triangles, normals, uvs);
+                }
+            }
+        }
+
+        // Set mesh data
+        Mesh mesh = new();
+        mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32; // Support for large meshes
+        mesh.SetVertices(vertices);
+        mesh.SetTriangles(triangles, 0);
+        mesh.SetNormals(normals);
+        mesh.SetUVs(0, uvs);
+        return mesh;
+    }
+    
+    /// <summary>
+    /// Calculate and add face data for given tile for mesh calculation
+    /// </summary>
+    /// <param name="x">X Position</param>
+    /// <param name="y">Y Position</param>
+    /// <param name="z">Z Position</param>
+    /// <param name="vertices">List of vertices/corners used in mesh</param>
+    /// <param name="triangles">List of triangles used in mesh</param>
+    /// <param name="normals">List of normals used in mesh</param>
+    /// <param name="uvs">List of uvs used in mesh</param>
+
+
+    private void GatherFaceData(int x, int y, int z, List<Vector3> vertices, List<int> triangles, List<Vector3> normals, List<Vector2> uvs)
+    {
+        // Loop through neighbours/faces
+        foreach (Vector3Int dir in CaveCell.Directions)
+        {
+            int nx = x + dir.x;
+            int ny = y + dir.y;
+            int nz = z + dir.z;
+
+            bool hidden = CaveUtilities.IsInGrid(nx, ny, nz, xWidth, yWidth, zWidth) && levelGrid[nx, ny, nz].Tile == CaveCell.Tiles.Tile;
+            
+            // If the neighbour is solid and in the grid, the face is hidden
+            // This means the face does not need to be drawn so it can be skipped
+            if(hidden)
+                continue;
+            
+            
+            // Calculate up and right direction using normal and cross product
+            Vector3 up = Vector3.Cross(dir, Vector3.right);
+            if (up == Vector3.zero) up = Vector3.Cross(dir, Vector3.forward);
+            Vector3 right = Vector3.Cross(up, dir);
+            
+            int vCount = vertices.Count;
+
+            // Face center needs to be slightly offset in direction and by half a tile to align properly to edge of tile
+            Vector3 direction = dir;
+            Vector3 pos = levelGrid[x, y, z].WorldPosition;
+            Vector3 faceCenter = pos + direction * 0.5f;
+
+            // Add corners
+            vertices.Add(faceCenter + (-right - up) * 0.5f);
+            vertices.Add(faceCenter + ( right - up) * 0.5f);
+            vertices.Add(faceCenter + ( right + up) * 0.5f);
+            vertices.Add(faceCenter + (-right + up) * 0.5f);
+
+            // Create triangles in order from corners
+            triangles.Add(vCount + 0);
+            triangles.Add(vCount + 1);
+            triangles.Add(vCount + 2);
+            triangles.Add(vCount + 2);
+            triangles.Add(vCount + 3);
+            triangles.Add(vCount + 0);
+
+            // Same normal for all 4 vertices
+            normals.AddRange(new Vector3[] { dir, dir, dir, dir });
+            
+            // Map uv to each vertex
+            uvs.AddRange(new[]
+            {
+                new Vector2(0, 0),
+                new Vector2(1, 0),
+                new Vector2(1, 1),
+                new Vector2(0, 1)
+            });
+        }
+    }
+    
+    
 
     private TileScriptableObject RandomWeightedTile()
     {
@@ -1048,6 +1161,16 @@ public class CaveCell
     {
         Tile = Tiles.Empty;
     }
+    
+    public static Vector3Int[] Directions =
+    {
+        Vector3Int.forward,
+        Vector3Int.back,
+        Vector3Int.left,
+        Vector3Int.right,
+        Vector3Int.up,
+        Vector3Int.down
+    };
 
 }
 [Serializable]
@@ -1074,6 +1197,11 @@ public struct CaveMask
 
     public void Toggle() => active = !active;
     public void Disable() => active = false;
+    
+    public static Vector2Int[] SearchOrder =
+    {
+        Vector2Int.right, Vector2Int.left, Vector2Int.up, Vector2Int.down
+    };
     
 }
 public class Room : IComparable<Room>

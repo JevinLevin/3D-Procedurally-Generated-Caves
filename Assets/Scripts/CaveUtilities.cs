@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 public static class CaveUtilities
@@ -43,6 +44,19 @@ public static class CaveUtilities
     public static bool IsInGrid(int x, int y, int xLength, int yLength)
     {
         return x >= 0 && x < xLength && y >= 0 && y < yLength;
+    }
+    /// <summary>
+    ///  Check if coordinates are within grid bounds
+    /// </summary>
+    /// <param name="x">Horizontal Position</param>
+    /// <param name="y">Vertical Position</param>
+    /// <param name="z">Z Position</param>
+    /// <param name="xLength">Width</param>
+    /// <param name="yLength">Height</param>
+    /// <param name="zLength">Height</param>
+    public static bool IsInGrid(int x, int y, int z, int xLength, int yLength, int zLength)
+    {
+        return x >= 0 && x < xLength && y >= 0 && y < yLength && z >= 0 && z < zLength;
     }
     
     /// <summary>
