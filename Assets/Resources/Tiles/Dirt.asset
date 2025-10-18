@@ -17,3 +17,4 @@ MonoBehaviour:
   weight: 50
   maxHealth: 3
   value: 1
+  particleColors: {r: 0.8490566, g: 0.76046145, b: 0.6541473, a: 1}
