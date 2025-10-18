@@ -20,13 +20,12 @@ public class PlayerController : MonoBehaviour
     private Vector3 velocity;
     Vector2 cameraRotation;
 
-    private void Awake()
-    {
-        Cursor.lockState = CursorLockMode.Locked;
-    }
-
+    private bool active;
+    
     private void Update()
     {
+        if(!active) return;
+        
         // Mouse 
         // https://gist.github.com/KarlRamstedt/407d50725c7b6abeaf43aee802fdd88e
         cameraRotation.x += Input.GetAxis("Mouse X") * sensitivity;
@@ -85,5 +84,39 @@ public class PlayerController : MonoBehaviour
         
         controller.Move(frameVelocity * Time.deltaTime);
         
+    }
+    
+    private void OnEnable()
+    {
+        GameManager.OnRoundEnd += DisablePlayer;
+        GameManager.OnRoundStart += EnablePlayer;
+        CaveGenerator.OnCaveGenerated += TeleportToFreeTile;
+    }
+    private void OnDisable()
+    {
+        GameManager.OnRoundEnd -= DisablePlayer;
+        GameManager.OnRoundStart -= EnablePlayer;
+        CaveGenerator.OnCaveGenerated -= TeleportToFreeTile;
+    }
+
+    private void DisablePlayer()
+    {
+        active = false;
+    }
+    private void EnablePlayer()
+    {
+        active = true;
+    }
+    
+    private void TeleportToFreeTile()
+    {
+        CaveCell freeTile = CaveUtilities.GetRandomEmptyCell();
+        if (freeTile != null)
+        {
+            Vector3 targetPosition = freeTile.WorldPosition;
+            controller.enabled = false;
+            transform.position = targetPosition;
+            controller.enabled = true;
+        }
     }
 }

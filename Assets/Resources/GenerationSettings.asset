@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b32f3f761d5223c4888ecead05d1b083, type: 3}
   m_Name: GenerationSettings
   m_EditorClassIdentifier: Assembly-CSharp::GenerationSettingsScriptableObject
-  caveSize: {x: 200, y: 15, z: 200}
+  caveSize: {x: 100, y: 15, z: 100}
   floorHeight: 4
   roomThreshold: 6
   maximumWalkers: 10

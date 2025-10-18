@@ -7,6 +7,8 @@ using Random = UnityEngine.Random;
 
 public class CaveGenerator : MonoBehaviour
 {
+    public static Action OnCaveGenerated;
+    
     public GenerationSettingsScriptableObject settings;
 
     [Header("Components")] [Header("Prefabs")] 
@@ -20,8 +22,8 @@ public class CaveGenerator : MonoBehaviour
 
     [HideInInspector] public float stepTime = 0.0f;
 
-    public CaveCell[,,] levelGrid;
-    public CaveMask[,] levelMask;
+    public static CaveCell[,,] levelGrid;
+    public static CaveMask[,] levelMask;
     public static int xWidth;
     public static int yWidth;
     public static int zWidth;
@@ -36,7 +38,17 @@ public class CaveGenerator : MonoBehaviour
     
     [SerializeField] [HideInInspector] private List<GameObject> floor = new();
     [SerializeField] private GameObject meshObject;
-    
+
+    private void OnEnable()
+    {
+        GameManager.OnRoundStart += FullGenerateFunction;
+    }
+    private void OnDisable()
+    {
+        GameManager.OnRoundStart -= FullGenerateFunction;
+    }
+
+
     /// <summary>
     /// Initialises the grid used for generation
     /// </summary>
@@ -66,7 +78,10 @@ public class CaveGenerator : MonoBehaviour
     }
 
 
-
+    private void FullGenerateFunction()
+    {
+        StartCoroutine(FullGenerate());
+    }
 
     /// <summary>
     /// Completes the full process of generating the cave
@@ -134,6 +149,8 @@ public class CaveGenerator : MonoBehaviour
         // Instantiate all gameobjects
         SetMesh(true);
         SetTiles();
+        
+        OnCaveGenerated?.Invoke();
     }
     
     /// <summary>

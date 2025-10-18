@@ -18,9 +18,13 @@ public class Timer : MonoBehaviour
     private float time;
     private Sequence timerSequence;
 
-    private void Start()
+    private void OnEnable()
     {
-        NewTimer();
+        GameManager.OnRoundStart += NewTimer;
+    }
+    private void OnDisable()
+    {
+        GameManager.OnRoundStart -= NewTimer;
     }
 
     public void NewTimer()

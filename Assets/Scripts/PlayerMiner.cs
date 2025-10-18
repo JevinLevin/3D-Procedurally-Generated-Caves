@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 public class PlayerMiner : MonoBehaviour
@@ -8,9 +9,13 @@ public class PlayerMiner : MonoBehaviour
     [Header("Attributes")]
     public float mineRange = 5f;
     public LayerMask mineableLayer;
+
+    private bool active;
     
     void Update()
     {
+        if(!active) return;
+        
         if(Input.GetMouseButtonDown(0))
         {
             OnMine();
@@ -29,5 +34,25 @@ public class PlayerMiner : MonoBehaviour
                 caveTile.OnMine();
             }
         }
+    }
+
+    private void OnEnable()
+    {
+        GameManager.OnRoundEnd += DisablePlayer;
+        GameManager.OnRoundStart += EnablePlayer;
+    }
+    private void OnDisable()
+    {
+        GameManager.OnRoundEnd -= DisablePlayer;
+        GameManager.OnRoundStart -= EnablePlayer;
+    }
+
+    private void DisablePlayer()
+    {
+        active = false;
+    }
+    private void EnablePlayer()
+    {
+        active = true;
     }
 }

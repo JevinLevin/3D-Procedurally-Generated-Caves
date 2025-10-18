@@ -1,5 +1,5 @@
-using System.Collections.Generic;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
 public static class CaveUtilities
 {
@@ -67,5 +67,42 @@ public static class CaveUtilities
     public static int TileDistance(CaveMask a, CaveMask b)
     {
         return (int)Mathf.Pow(a.x - b.x, 2) + (int)Mathf.Pow(a.z - b.z, 2);
+    }
+    
+    /// <summary>
+    ///  Returns a random active cave mask in the grid
+    /// </summary>
+    public static CaveMask? GetRandomMask()
+    {
+        int failSafe = 0;
+        while (failSafe < 1000)
+        {
+            failSafe++;
+            CaveMask check = CaveGenerator.levelMask[Random.Range(0, CaveGenerator.xWidth), Random.Range(0, CaveGenerator.zWidth)];
+            if (check.active)
+                return check;
+        }
+        return null;
+    }
+    
+    /// <summary>
+    ///  Returns a random empty cave cell in the grid
+    /// </summary>
+    public static CaveCell GetRandomEmptyCell()
+    {
+        int failSafe = 0;
+        while (failSafe < 1000)
+        {
+            failSafe++;
+            CaveMask? mask = GetRandomMask();
+            if (!mask.HasValue) continue;
+            int x = mask.Value.x;
+            int z = mask.Value.z;
+            if (CaveGenerator.levelGrid[x, 1, z].Tile == CaveCell.Tiles.Empty)
+            {
+                return CaveGenerator.levelGrid[x, 1, z];
+            }
+        }
+        return null;
     }
 }
