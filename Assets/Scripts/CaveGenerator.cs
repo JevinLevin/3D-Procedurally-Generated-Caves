@@ -20,12 +20,6 @@ public class CaveGenerator : MonoBehaviour
 
     [HideInInspector] public float stepTime = 0.0f;
 
-    private void Update()
-    {
-        if(Input.GetKeyDown(KeyCode.G))
-            StartCoroutine(FullGenerate());
-    }
-
     public CaveCell[,,] levelGrid;
     public CaveMask[,] levelMask;
     public static int xWidth;
@@ -1173,11 +1167,14 @@ public class CaveGenerator : MonoBehaviour
             int ny = y + (int)dir.y;
             int nz = z + (int)dir.z;
 
-            bool hidden = CaveUtilities.IsInGrid(nx, ny, nz, xWidth, yWidth, zWidth) && levelGrid[nx, ny, nz].Tile == CaveCell.Tiles.Tile;
-            
+            bool hidden =
+                (CaveUtilities.IsInGrid(nx, ny, nz, xWidth, yWidth, zWidth) && levelGrid[nx, ny, nz].Tile == CaveCell.Tiles.Tile) ||
+                !CaveUtilities.IsInGrid(nx, ny, nz, xWidth, yWidth, zWidth) || !levelMask[nx,nz].active ;
+
+
             // If the neighbour is solid and in the grid, the face is hidden
             // This means the face does not need to be drawn so it can be skipped
-            if(hidden)
+            if (hidden)
                 continue;
             
             

@@ -15,3 +15,5 @@ MonoBehaviour:
   mesh: {fileID: -2027792483851093499, guid: 4b0a390c831c6c1418939525c3ddfaac, type: 3}
   material: {fileID: 2100000, guid: 1a16feb713613d8458f022403240ac44, type: 2}
   weight: 5
+  maxHealth: 7
+  value: 10
