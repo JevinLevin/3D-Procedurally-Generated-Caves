@@ -38,10 +38,10 @@ public class CaveTile : MonoBehaviour
     }
 
     private Tween scaleTween;
-    public void OnMine()
+    public void OnMine(int damage = 1)
     {
         
-        health--;
+        health -= damage;
         if (health > 0)
         {
             if (scaleTween.isAlive)
