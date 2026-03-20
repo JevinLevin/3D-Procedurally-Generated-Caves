@@ -3,9 +3,13 @@
 ## How To Play
 ### Gameplay
 WASD to move. 
+
 Space to jump.
+
 Mouse to aim.
+
 Click on a tile to mine.
+
 Right click to explode nearby tiles. 
 
 ### Editor
